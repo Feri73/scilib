@@ -1,0 +1,8 @@
+*
+
+!.gitignore
+!todo
+!base
+!base/*
+!analysis
+!analysis/*

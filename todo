@@ -1,0 +1,212 @@
+makefields in computation.py class properties
+test stuff
+test the correctness of written hypothesis tests
+do i need func?
+create funcs in Node for things like instanceof, class, type, etc.
+
+
+class SyntaxManager:
+    last_closed_block: 'SyntaxBlock' = None
+    opened_blocks: List[Optional['SyntaxBlock']] = [None]
+    opened_clauses: List[Optional['SyntaxClause']] = [[]]
+
+    @staticmethod
+    def open_block(block: 'SyntaxBlock') -> None:
+        assert SyntaxManager.opened_clauses[-1] is not None
+        SyntaxManager.opened_blocks.append(block)
+        SyntaxManager.opened_clauses.append(None)
+
+    @staticmethod
+    def open_clause(clause: 'SyntaxClause') -> None:
+        assert SyntaxManager.opened_blocks[-1] is not None
+        SyntaxManager.opened_clauses[-1] = clause
+        SyntaxManager.opened_blocks[-1].open_clause(clause)
+
+    @staticmethod
+    def close_clause() -> None:
+        assert SyntaxManager.opened_clauses[-1] is not None
+        SyntaxManager.opened_clauses[-1] = None
+        SyntaxManager.opened_blocks[-1].close_clause()
+
+    @staticmethod
+    def close_block() -> None:
+        assert len(SyntaxManager.opened_blocks) > 1 and SyntaxManager.opened_clauses[-1] is None
+        SyntaxManager.last_closed_block = SyntaxManager.opened_blocks.pop(-1)
+
+    @staticmethod
+    def get_last_closed_block():
+        assert SyntaxManager.last_closed_block is not None
+        res = SyntaxManager.last_closed_block
+        SyntaxManager.last_closed_block = None
+        return res
+
+    @staticmethod
+    def get_clause_result():
+        assert SyntaxManager.opened_clauses[-1] is not None
+        return SyntaxManager.opened_clauses[-1].result
+
+    @staticmethod
+    def set_clause_result(result) -> None:
+        assert SyntaxManager.opened_clauses[-1] is not None
+        SyntaxManager.opened_clauses[-1].result = result
+
+
+class SyntaxClause(ABC):
+    def before_enter(self):
+        pass
+
+    def after_exit(self):
+        pass
+
+    def __enter__(self):
+        self.before_enter()
+        SyntaxManager.open_clause(self)
+
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        SyntaxManager.close_clause()
+        self.after_exit()
+
+    @abstractmethod
+    @property
+    def result(self):
+        pass
+
+    @abstractmethod
+    @result.setter
+    def result(self, value) -> None:
+        pass
+
+
+class SyntaxBlock(ABC):
+    @abstractmethod
+    def open_clause(self, clause: SyntaxClause) -> None:
+        pass
+
+    @abstractmethod
+    def close_clause(self) -> None:
+        pass
+
+
+class ConditionBlock(SyntaxBlock):
+    def __init__(self):
+        self.clauses = []
+
+    def open_clause(self, clause: SyntaxClause) -> None:
+        assert len(self.clauses) == 0 or not isinstance(clause, IfClause)
+        assert len(self.clauses) > 0 or isinstance(clause, IfClause)
+        assert len(self.clauses) == 0 or not isinstance(self.clauses[-1], ElseClause)
+        self.clauses.append(clause)
+
+    def close_clause(self) -> None:
+        pass
+
+    @staticmethod
+    def ifelse(clauses):
+        for clauses, st in clauses[:-1]:
+            if cond:
+                return st
+        return elsest
+
+    @property
+    def result(self):
+        return Func(Cond.ifelse)(*list(map(lambda c: c.condition, self.clauses)))
+
+
+class IfClause(SyntaxClause):
+    def __init__(self, condition):
+        self.condition = condition
+
+    def before_enter(self):
+        SyntaxManager.open_block(ConditionBlock())
+
+    @property
+    def result(self):
+        pass
+
+
+class ElifClause(SyntaxClause):
+    def __init__(self, condition):
+        self.condition = condition
+
+
+class ElseClause(SyntaxClause):
+    def after_exit(self):
+        SyntaxManager.close_block()
+
+# def begin_clause(self, clause: 'ConditionalClause') -> None:
+#     assert len(self.clauses) == 0 or not isinstance(clause, If)
+#     assert len(self.clauses) > 0 or isinstance(clause, If)
+#     assert len(self.clauses) == 0 or not isinstance(self.clauses[-1], Else)
+#     self.clauses.append((clause, None))
+#
+# def end_clause(self) -> None:
+#     self.clauses[-1][1] = self.clauses[-1].result
+
+# class Cond:
+#     def __init__(self):
+#         self.statements = []
+#
+#     @staticmethod
+#     def ifelse(*conds, elsest):
+#         for cond, st in conds:
+#             if cond:
+#                 return st
+#         return elsest
+#
+#     def add_statement(self, statement):
+#         if len(self.statements) == 0:
+#             assert isinstance(statement, If)
+#         if len(self.statements) > 0:
+#             assert not isinstance(statement, If)
+#         assert len(self.statements) == 0 or not isinstance(self.statements[-1], Else)
+#
+#     def gen_res(self):
+#         assert isinstance(self.statements[-1], Else)
+#         res = Func(Cond.ifelse)(*list(map(lambda x:x.condition, self.statements)))
+#         del If.conds[-1]
+#         return res
+#
+#     @staticmethod
+#     @property
+#     def res():
+#         return If.conds[-1].gen_res()
+#
+#     @staticmethod
+#     @res.setter
+#     def res(value):
+#
+#
+#
+# class If:
+#     conds = []
+#
+#     def __init__(self, condition):
+#         self.condition = condition
+#         cond = Cond()
+#         cond.add_statement(self)
+#         If.conds.append(cond)
+#
+#
+# class Elif:
+#     def __init__(self, condition):
+#         self.condition = condition
+#         If.conds[-1].add_statement(self)
+#
+#
+# class Else:
+#     def __init__(self):
+#         If.conds[-1].add_statement(self)
+
+
+# res = Func(lambda cond, st1, st2: st1 if cond else st2)(cd, s1, s2)
+#
+# with Cond.If(cd) as s1:
+#     u = asd
+#     v = asd
+#     s1.set(u, v)
+# with Cond.Else as s2:
+#     z = x + y
+#     s2.set(z, z)
+# x = cond.res
+
+# class IfFunction(Function):
