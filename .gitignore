@@ -1,9 +1,10 @@
 *
-
 !.gitignore
-!__init__.py
+!setup.cfg
 !todo
-!base
-!base/*
-!analysis
-!analysis/*
+!src
+!src/*
+!src/analysis
+!src/analysis/*
+!src/base
+!src/base/*
