@@ -1,6 +1,7 @@
 *
 
 !.gitignore
+!__init__.py
 !todo
 !base
 !base/*
