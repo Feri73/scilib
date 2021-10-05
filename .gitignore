@@ -4,7 +4,4 @@
 !todo
 !src
 !src/*
-!src/analysis
-!src/analysis/*
-!src/base
-!src/base/*
+!src/*/*
