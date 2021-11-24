@@ -3,8 +3,8 @@ from typing import Callable, List, Optional, Dict, Any, Tuple
 
 
 class NodeMeta(ABCMeta):
-    special_methods = ['add', 'sub', 'mul', 'floordiv', 'div', 'mod', 'powe', 'lshift', 'rshift', 'and', 'xor', 'or',
-                       'radd', 'rsub', 'rmul', 'rfloordiv', 'rdiv', 'rmod', 'rpowe', 'rlshift', 'rrshift', 'rand',
+    special_methods = ['add', 'sub', 'mul', 'floordiv', 'div', 'mod', 'pow', 'lshift', 'rshift', 'and', 'xor', 'or',
+                       'radd', 'rsub', 'rmul', 'rfloordiv', 'rdiv', 'rmod', 'rpow', 'rlshift', 'rrshift', 'rand',
                        'rxor', 'ror',
                        'neg', 'pose', 'abs', 'invert', 'complex', 'int', 'long', 'float', 'oct', 'hex',
                        'lt', 'le', 'eq', 'ne', 'ge', 'gt',
