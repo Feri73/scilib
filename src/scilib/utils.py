@@ -45,7 +45,7 @@ def do_import(file: str, element: str = None, name='_tmp_') -> Union[ModuleType,
         return getattr(file, element)
 
 
-def load_pickle(pickle, file_name: str) -> None:
+def load_pickle(pickle, file_name: str):
     with open(file_name, 'rb') as f:
         return pickle.load(f)
 
