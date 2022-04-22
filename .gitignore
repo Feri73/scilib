@@ -7,3 +7,7 @@
 !src/*
 !src/*/*
 !src/*/*/*
+src/scilib.egg-info
+src/scilib.egg-info/*
+src/*/__pycache__
+src/*/__pycache__/*

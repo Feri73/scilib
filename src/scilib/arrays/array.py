@@ -142,7 +142,7 @@ class SampledTimeView(ArrayView1D):
 
     @property
     def times(self):
-        return np.arange(self.start_time, self.start_time + len(self) / self.freq, 1 / self.freq)
+        return np.arange(self.start_time, (self.start_time * self.freq + len(self)) / self.freq, 1 / self.freq)
 
     @accessor
     def __getitem__(self, times: NPIndex) -> Union[ArrayView1D, 'SampledTimeView']:
