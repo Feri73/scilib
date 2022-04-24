@@ -36,9 +36,13 @@ class KeyDefaultDict(defaultdict):
             return ret
 
 
+def rel2abs(file: str, ref__file__) -> str:
+    return os.path.join(os.path.dirname(os.path.realpath(ref__file__)), file)
+
+
 def do_import(file: str, element: str = None, name='_tmp_', ref__file__=None) -> Union[ModuleType, Any]:
     if __file__ is not None:
-        file = os.path.join(os.path.dirname(os.path.realpath(ref__file__)), file)
+        file = rel2abs(file, ref__file__)
     spec = importlib.util.spec_from_file_location(name, file)
     file = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(file)
