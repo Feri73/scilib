@@ -2,6 +2,7 @@ import importlib.util
 from collections import defaultdict
 from types import ModuleType
 from typing import Union, Any
+import os
 
 
 class Config(dict):
@@ -35,7 +36,9 @@ class KeyDefaultDict(defaultdict):
             return ret
 
 
-def do_import(file: str, element: str = None, name='_tmp_') -> Union[ModuleType, Any]:
+def do_import(file: str, element: str = None, name='_tmp_', ref__file__=None) -> Union[ModuleType, Any]:
+    if __file__ is not None:
+        file = os.path.join(os.path.dirname(os.path.realpath(ref__file__)), file)
     spec = importlib.util.spec_from_file_location(name, file)
     file = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(file)
