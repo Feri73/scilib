@@ -229,7 +229,7 @@ class EventTimeView(ArrayView1D):
 
     @accessor
     def to_sampled(self, freq: float, default_value: NPValue = None,
-                   start_time: float = 0, end_time: float = None, set_start_time: bool = False) -> SampledTimeView:
+                   start_time: float = 0., end_time: float = None, set_start_time: bool = False) -> SampledTimeView:
         assert min(self.times[1:] - self.times[:-1]) >= 1 / freq
 
         default_value = default_value or [0]
@@ -240,6 +240,7 @@ class EventTimeView(ArrayView1D):
         t = start_time
         next_event_i = 0
         end_time = end_time or self.times[-1]
+        n_steps = 0
         while t <= end_time:
             if next_event_i <= len(self.times) - 1 and self.times[next_event_i] <= t:
                 slcs[self.axis] = [next_event_i]
@@ -247,7 +248,8 @@ class EventTimeView(ArrayView1D):
                 next_event_i += 1
             else:
                 res.append(default_value if len(res) == 0 else np.ones_like(res[0]) * default_value)
-            t += 1 / freq
+            n_steps += 1
+            t = n_steps / freq
         return SampledTimeView(self.axis, freq, start_time if set_start_time else 0.)(
             np.swapaxes(res, 0, self.axis + 1)[0])
 
