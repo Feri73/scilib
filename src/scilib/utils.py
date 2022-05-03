@@ -41,7 +41,7 @@ def rel2abs(file: str, ref__file__) -> str:
 
 
 def do_import(file: str, element: str = None, name='_tmp_', ref__file__=None) -> Union[ModuleType, Any]:
-    if __file__ is not None:
+    if ref__file__ is not None:
         file = rel2abs(file, ref__file__)
     spec = importlib.util.spec_from_file_location(name, file)
     file = importlib.util.module_from_spec(spec)
