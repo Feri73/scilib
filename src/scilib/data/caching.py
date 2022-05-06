@@ -32,7 +32,6 @@ class Memoize:
     def func_summary(func: Callable) -> str:
         try:
             src = inspect.getsource(func)
-            print(src)
         except OSError:
             src = '1'
         if func in Depends.dependants:
@@ -75,10 +74,10 @@ class Memoize:
                 if arg_list == [args, kwargs]:
                     self.print(f'Match found for {args}, {kwargs} in #{i}.')
                     return load_pickle(self.__pickle, f'{self.__path}/{self.__name}/{i}.pckl')
+            self.print(f'No match found for {args}, {kwargs}. Calculating the result')
         res = self.__func(*args, **kwargs)
         if self.__write_cache:
-            self.print(f'No match found for {args}, {kwargs}. '
-                       f'Calculating the result and dumping in #{len(self.__db.obj) - 1}')
+            print(f'Dumping the result in #{len(self.__db.obj) - 1}')
             dump_pickle(self.__pickle, f'{self.__path}/{self.__name}/{len(self.__db.obj) - 1}.pckl', res)
             self.__db.obj.append([args, kwargs])
             self.__db.store()
