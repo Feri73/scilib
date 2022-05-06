@@ -1,5 +1,6 @@
 import importlib.util
 from collections import defaultdict
+from pathlib import Path
 from types import ModuleType
 from typing import Union, Any
 import os
@@ -57,6 +58,8 @@ def load_pickle(pickle, file_name: str):
         return pickle.load(f)
 
 
-def dump_pickle(pickle, file_name: str, obj) -> None:
+def dump_pickle(pickle, file_name: str, obj, make_parent: bool = True) -> None:
+    if make_parent:
+        Path(file_name).parent.absolute().mkdir(parents=True, exist_ok=True)
     with open(file_name, 'wb') as f:
         pickle.dump(obj, f)
