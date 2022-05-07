@@ -1,5 +1,6 @@
 import importlib.util
 from collections import defaultdict
+from pathlib import Path
 from types import ModuleType
 from typing import Union, Any
 import os
@@ -41,7 +42,7 @@ def rel2abs(file: str, ref__file__) -> str:
 
 
 def do_import(file: str, element: str = None, name='_tmp_', ref__file__=None) -> Union[ModuleType, Any]:
-    if __file__ is not None:
+    if ref__file__ is not None:
         file = rel2abs(file, ref__file__)
     spec = importlib.util.spec_from_file_location(name, file)
     file = importlib.util.module_from_spec(spec)
@@ -57,6 +58,8 @@ def load_pickle(pickle, file_name: str):
         return pickle.load(f)
 
 
-def dump_pickle(pickle, file_name: str, obj) -> None:
+def dump_pickle(pickle, file_name: str, obj, make_parent: bool = True) -> None:
+    if make_parent:
+        Path(file_name).parent.absolute().mkdir(parents=True, exist_ok=True)
     with open(file_name, 'wb') as f:
         pickle.dump(obj, f)

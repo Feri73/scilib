@@ -282,22 +282,70 @@ class KeyView(ArrayView1D):
     def keys(self):
         return self.__keys
 
-    @accessor
-    def __getitem__(self, keys: Union[str, List[str]]) -> 'KeyView':
+    def __update_keys(self, pattern: str, keys: List[str]) -> List[str]:
+        if pattern.startswith('!'):
+            return [x for x in keys if not x.startswith(pattern[1:])]
+        if pattern.endswith('!'):
+            return [x for x in keys if not x.endswith(pattern[:-1])]
+        if pattern.startswith('@'):
+            return keys + [x for x in self.__keys if x.startswith(pattern[1:])]
+        if pattern.endswith('@'):
+            return keys + [x for x in self.__keys if x.endswith(pattern[:-1])]
+        else:
+            return keys + [x for x in self.__keys if x.startswith(pattern)]
+
+    def infer_keys(self, keys: Union[str, List[str]]) -> List[str]:
         if isinstance(keys, str):
             keys = [keys]
-        keys = sum([[x for x in self.__keys if x.startswith(key)] for key in keys], [])
+        exclude_patterns = []
+        has_include_pattern = False
+        final_keys = []
+        for pattern in keys:
+            if pattern.startswith('!') or pattern.endswith('!'):
+                exclude_patterns.append(pattern)
+            else:
+                has_include_pattern = True
+                final_keys = self.__update_keys(pattern, final_keys)
+        if not has_include_pattern:
+            final_keys = self.__keys
+        for pattern in exclude_patterns:
+            final_keys = self.__update_keys(pattern, final_keys)
+        return final_keys
 
+    @accessor
+    def __getitem__(self, keys: Union[str, List[str]]) -> 'KeyView':
+        keys = self.infer_keys(keys)
         return KeyView(self.axis, *keys)(super(KeyView, self).__getitem__([self.__reverse_keys[key] for key in keys]))
 
     def __setitem__(self, keys: Union[str, List[str]], value: NPValue) -> None:
-        if isinstance(keys, str):
-            keys = [keys]
-        keys = sum([[x for x in self.__keys if x.startswith(key)] for key in keys], [])
+        keys = self.__infer_keys(keys)
         super(KeyView, self).__setitem__([self.__reverse_keys[key] for key in keys], value)
 
 
-class Array:
+class ArrayMeta(type):
+    operators = ['add', 'sub', 'mul', 'floordiv', 'truediv', 'mod', 'pow', 'lshift', 'rshift', 'and', 'xor', 'or',
+                 'radd', 'rsub', 'rmul', 'rfloordiv', 'rtruediv', 'rmod', 'rpow', 'rlshift', 'rrshift', 'rand',
+                 'rxor', 'ror',
+                 'neg', 'abs', 'invert', 'complex', 'int', 'long', 'float', 'oct', 'hex',
+                 'lt', 'le', 'eq', 'ne', 'ge', 'gt']
+    other_methods = ['astype']
+
+    def __new__(mcs, name, bases, namespace, **kwargs):
+        cls = super().__new__(mcs, name, bases, namespace, **kwargs)
+        for method in ArrayMeta.operators:
+            cls.set_arithmetic_method(f'__{method}__')
+        for method in ArrayMeta.other_methods:
+            cls.set_arithmetic_method(method)
+        return cls
+
+    def set_arithmetic_method(cls, method: str):
+        def op(self, *args, **kwargs):
+            return self(getattr(self.numpy, method)(*args, **kwargs))
+
+        setattr(cls, method, op)
+
+
+class Array(metaclass=ArrayMeta):
     class View:
         def __init__(self, name: str, array: 'Array'):
             self.__name = name
