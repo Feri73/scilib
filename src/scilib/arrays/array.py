@@ -178,7 +178,7 @@ class SampledTimeView(ArrayView1D):
     def take(self, start_time: float, duration: float, freq: float = None,
              set_start_time: bool = False) -> 'SampledTimeView':
         freq = freq or self.freq
-        start_ind = int(start_time * self.freq)
+        start_ind = int((start_time - self.start_time) * self.freq)
         inds = []
         while len(inds) < duration * freq:
             inds.append(start_ind)
