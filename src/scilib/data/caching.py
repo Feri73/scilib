@@ -54,16 +54,20 @@ class Memoize:
         self.__write_cache = write_cache
         self.__verbose = verbose
 
-        if check_func_change:
-            func_summary = self.func_summary(self.__func)
-        else:
-            func_summary = ''
-        self.__db = DiskObj(f'{path}/{name}/db.pckl', pickle, [func_summary])
-        if not check_func_change or self.__db.obj[0] != func_summary:
-            hs = hash(self.__db.obj[0])
-            self.print(f'Function memoized at {path}/{name} is changed. Archiving current cache with hash {hs}.')
-            os.rename(f'{path}/{name}', f'{path}/{name}_{hs}')
+        if self.__read_cache or self.__write_cache:
+            if check_func_change:
+                func_summary = self.func_summary(self.__func)
+            else:
+                func_summary = ''
+
             self.__db = DiskObj(f'{path}/{name}/db.pckl', pickle, [func_summary])
+            if not check_func_change or self.__db.obj[0] != func_summary:
+                hs = hash(self.__db.obj[0])
+                self.print(f'Function memoized at {path}/{name} is changed. Archiving current cache with hash {hs}.')
+                os.rename(f'{path}/{name}', f'{path}/{name}_{hs}')
+                self.__db = DiskObj(f'{path}/{name}/db.pckl', pickle, [func_summary])
+        else:
+            self.print(f'Memoize disabled for {path}/{name}.')
 
         return self.__call__
 
