@@ -1,9 +1,10 @@
 import inspect
 import os.path
-from pathlib import Path
 from typing import Callable
 
-from scilib.utils import load_pickle, dump_pickle
+from ..utils import load_pickle, dump_pickle
+
+from ..data.memmap import DiskObj
 
 
 class Depends:
@@ -86,25 +87,3 @@ class Memoize:
             self.__db.obj.append([args, kwargs])
             self.__db.store()
         return res
-
-
-class DiskObj:
-    def __init__(self, path: str, pickle, default=None):
-        self.__path = path
-        self.__pickle = pickle
-
-        self.__obj = default
-        if os.path.exists(path):
-            self.__obj = load_pickle(pickle, path)
-
-    @property
-    def obj(self):
-        return self.__obj
-
-    @obj.setter
-    def obj(self, obj):
-        self.__obj = obj
-
-    def store(self) -> None:
-        Path(self.__path).parent.absolute().mkdir(parents=True, exist_ok=True)
-        dump_pickle(self.__pickle, self.__path, self.__obj)

@@ -1,4 +1,5 @@
 import importlib.util
+import sys
 from collections import defaultdict
 from pathlib import Path
 from types import ModuleType
@@ -51,6 +52,21 @@ def do_import(file: str, element: str = None, name='_tmp_', ref__file__=None) ->
         return file
     else:
         return getattr(file, element)
+
+
+class ProjectImports:
+    def __init__(self, root_path: str, ref__file__=None):
+        self.__path = root_path if ref__file__ is None else os.path.join(os.path.dirname(ref__file__), root_path)
+
+    def __enter__(self) -> 'ProjectImports':
+        sys.path.insert(0, self.__path)
+        return self
+
+    def __exit__(self, exc_type, exc_val, exc_tb) -> None:
+        sys.path = sys.path[1:]
+
+    def in_project(self) -> bool:
+        return True
 
 
 def load_pickle(pickle, file_name: str):
