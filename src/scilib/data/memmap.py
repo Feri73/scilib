@@ -1,12 +1,13 @@
 import os
-import pickle
 from pathlib import Path
-from typing import Tuple
+from typing import Tuple, Union
 
 import numpy as np
 import numpy.typing as npt
 
 from ..utils import Config as C, load_pickle, dump_pickle
+
+Index = Union[int, Tuple[int, ...]]
 
 
 class DiskObj:
@@ -32,10 +33,14 @@ class DiskObj:
 
 
 class NumpyMemmap:
-    def __init__(self, path: str, max_indexing_shape: Tuple[int, ...] = None, example_point: npt.NDArray = None):
+    def __init__(self, path: str, max_indexing_shape: Index = None, example_point: npt.NDArray = None):
+        max_indexing_shape = self.__index_to_tuple(max_indexing_shape)
+
         self.__path = path
 
+        import pickle
         self.__metadata = DiskObj(f'{self.__path}/metadata.pckl', pickle)
+
         if self.__metadata.obj is None:
             self.__metadata.obj = C(max_indexing_shape=max_indexing_shape, dtype=None, data_shape=None)
         if example_point is not None:
@@ -86,6 +91,12 @@ class NumpyMemmap:
                                        shape=(*self.__metadata.obj.max_indexing_shape, *self.__metadata.obj.data_shape))
         self.__opened_filename = filename
 
+    @staticmethod
+    def __index_to_tuple(ind: Index) -> Tuple[int, ...]:
+        if isinstance(ind, int):
+            ind = (ind,)
+        return ind
+
     def __inds2open(self, inds: Tuple[int, ...]) -> Tuple[int, ...]:
         parts = list(
             dim_ind // dim_max_len for dim_max_len, dim_ind in zip(self.__metadata.obj.max_indexing_shape, inds))
@@ -95,14 +106,14 @@ class NumpyMemmap:
         return tuple(inds - part * self.__metadata.obj.max_indexing_shape[dim]
                      for dim, (inds, part) in enumerate(zip(inds, parts)))
 
-    def __getitem__(self, inds: Tuple[int, ...]) -> npt.NDArray:
-        inds = self.__inds2open(inds)
+    def __getitem__(self, inds: Index) -> npt.NDArray:
+        inds = self.__inds2open(self.__index_to_tuple(inds))
         return self.__opened_file[inds]
 
-    def __setitem__(self, inds: Tuple[int, ...], value: npt.NDArray):
+    def __setitem__(self, inds: Index, value: npt.NDArray):
         if self.__metadata.obj.dtype is None or self.__metadata.obj.data_shape is None:
             self.__use_example(value)
-        inds = self.__inds2open(inds)
+        inds = self.__inds2open(self.__index_to_tuple(inds))
         self.__opened_file[inds] = value
 
     def close(self) -> None:
@@ -111,6 +122,12 @@ class NumpyMemmap:
             del self.__opened_file
             self.__opened_file = None
             self.__opened_filename = None
+
+    def __enter__(self) -> 'NumpyMemmap':
+        return self
+
+    def __exit__(self, exc_type, exc_val, exc_tb) -> None:
+        self.close()
 
     def merge_all(self, path: str) -> 'NumpyMemmap':
         all_files = list(filter(lambda x: x.endswith('.npy'), os.listdir(self.__path)))
