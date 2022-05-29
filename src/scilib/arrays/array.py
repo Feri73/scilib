@@ -314,10 +314,16 @@ class KeyView(ArrayView1D):
 
     @accessor
     def __getitem__(self, keys: Union[str, List[str]]) -> 'KeyView':
+        """
+        needs to return elements in the order keys are given
+        """
         keys = self.infer_keys(keys)
         return KeyView(self.axis, *keys)(super(KeyView, self).__getitem__([self.__reverse_keys[key] for key in keys]))
 
     def __setitem__(self, keys: Union[str, List[str]], value: NPValue) -> None:
+        """
+        needs to return elements in the order keys are given
+        """
         keys = self.__infer_keys(keys)
         super(KeyView, self).__setitem__([self.__reverse_keys[key] for key in keys], value)
 
