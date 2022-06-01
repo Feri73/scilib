@@ -175,8 +175,10 @@ class SampledTimeView(ArrayView1D):
             return ArrayView1D(self.axis)(res)
 
     @accessor
-    def take(self, start_time: float, duration: float, freq: float = None,
+    def take(self, start_time: float = None, duration: float = None, freq: float = None,
              set_start_time: bool = False) -> 'SampledTimeView':
+        start_time = start_time or self.start_time
+        duration = duration or self.times[-1] - self.times[0]
         freq = freq or self.freq
         start_ind = int((start_time - self.start_time) * self.freq)
         inds = []
