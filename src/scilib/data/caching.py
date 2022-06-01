@@ -1,8 +1,8 @@
 import inspect
 import os.path
-from typing import Callable
+from typing import Callable, Iterable
 
-from ..utils import load_pickle, dump_pickle
+from ..utils import load_pickle, dump_pickle, Config
 
 from ..data.memmap import DiskObj
 
@@ -85,5 +85,58 @@ class Memoize:
             print(f'Dumping the result in #{len(self.__db.obj) - 1}')
             dump_pickle(self.__pickle, f'{self.__path}/{self.__name}/{len(self.__db.obj) - 1}.pckl', res)
             self.__db.obj.append([args, kwargs])
-            self.__db.store()
+            self.__db.flush()
         return res
+
+
+class ProgramCache:
+    class Vars(Config):
+        pass
+
+    def __init__(self, path: str, verbose: bool = True, pickle=None):
+        self.__started = False
+        self.__cur_state = tuple()
+        self.__path = path
+        if pickle is None:
+            import pickle
+        self.__verbose = verbose
+        self.__storage = DiskObj(path, pickle, {})
+        self.__vars = self.Vars()
+
+    @property
+    def vars(self):
+        return self.__vars
+
+    def __enter__(self) -> 'ProgramCache':
+        self.__started = True
+        return self
+
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        self.flush()
+        self.__started = False
+
+    def print(self, *args, **kwargs):
+        if self.__verbose:
+            return print(f'Program caching to {self.__path}: ', *args, **kwargs)
+
+    def flush(self) -> None:
+        self.__storage.flush()
+
+    def loop(self, it: Iterable, verify_element: bool = True, cache_every: int = 1):
+        assert self.__started
+        for index, element in enumerate(it):
+            self.__cur_state += (index,)
+            if self.__cur_state in self.__storage.obj:
+                self.print(f'Skipping index state {self.__cur_state}. Setting vars={self.__vars}.')
+                self.__vars = self.__storage.obj[self.__cur_state][1]
+                if verify_element:
+                    assert element == self.__storage.obj[self.__cur_state][0]
+            else:
+                yield element
+                self.__storage.obj[self.__cur_state] = [element if verify_element else None, self.__vars]
+                if index % cache_every == 0:
+                    self.print(f'Flushing after processing index state {self.__cur_state}. Reading vars={self.__vars}.')
+                    self.flush()
+            self.__cur_state = self.__cur_state[:-1]
+
+        self.flush()

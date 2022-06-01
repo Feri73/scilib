@@ -31,6 +31,12 @@ class DiskObj:
         Path(self.__path).parent.absolute().mkdir(parents=True, exist_ok=True)
         dump_pickle(self.__pickle, self.__path, self.__obj)
 
+    def __enter__(self) -> 'DiskObj':
+        return self
+
+    def __exit__(self, exc_type, exc_val, exc_tb) -> None:
+        self.flush()
+
 
 class NumpyMemmap:
     def __init__(self, path: str, max_indexing_shape: Index = None, example_point: npt.NDArray = None):
@@ -71,8 +77,8 @@ class NumpyMemmap:
         else:
             assert self.__metadata.obj.data_shape == example_point.shape
 
-    @property
-    def numpy(self):
+    def numpy(self, inds_inside_numpy: Index) -> npt.NDArray:
+        _ = self[inds_inside_numpy]
         return self.__opened_file
 
     def __inds2filename(self, inds) -> str:
@@ -141,6 +147,6 @@ class NumpyMemmap:
             inds = tuple(slice(dim_part * dim_shape, (dim_part + 1) * dim_shape)
                          for dim_part, dim_shape in zip(part, self.__metadata.obj.max_indexing_shape))
             self.__open(file[:-4], True)
-            res.numpy[inds] = self.numpy
+            res.__opened_file[inds] = self.__opened_file
         res.flush()
         return res
