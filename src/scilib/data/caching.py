@@ -1,10 +1,9 @@
 import inspect
 import os.path
-from typing import Callable, Iterable
-
-from ..utils import load_pickle, dump_pickle, Config
+from typing import Callable, Iterable, Union, Optional, Tuple
 
 from ..data.memmap import DiskObj
+from ..utils import load_pickle, dump_pickle, Config
 
 
 class Depends:
@@ -19,6 +18,32 @@ class Depends:
 
 
 class Memoize:
+    class ArrayHash:
+        from ..arrays.array import Array
+        import numpy as np
+        import numpy.typing as npt
+
+        def __init__(self, value: Union[npt.NDArray, Array]):
+            if isinstance(value, self.Array):
+                self.__value = value.numpy
+            elif isinstance(value, self.np.ndarray):
+                self.__value = value
+            else:
+                raise ValueError()
+
+        def __eq__(self, other) -> bool:
+            return type(self) == type(other) and self.np.all(self.__value == other.__value)
+
+        def __ne__(self, other) -> bool:
+            return not (self == other)
+
+    @staticmethod
+    def array_hash_func(value) -> Optional['Memoize.ArrayHash']:
+        try:
+            return Memoize.ArrayHash(value)
+        except ValueError:
+            return None
+
     def __init__(self, func: Callable):
         self.__func = func
         self.__path = None
@@ -28,6 +53,7 @@ class Memoize:
         self.__read_cache = None
         self.__write_cache = None
         self.__verbose = None
+        self.__hash_func = None
 
     @staticmethod
     def func_summary(func: Callable) -> str:
@@ -44,8 +70,15 @@ class Memoize:
         if self.__verbose:
             print(*args, **kwargs)
 
+    @staticmethod
+    def set_config(*args, **kwargs) -> Callable[[Callable], Callable]:
+        def create_memoize(func: Callable):
+            return Memoize(func).config(*args, **kwargs)
+
+        return create_memoize
+
     def config(self, path: str, name: str, check_func_change=True, read_cache: bool = True, write_cache: bool = True,
-               pickle=None, verbose=True) -> Callable:
+               pickle=None, verbose=True, hash_func: Callable = None) -> Callable:
         self.__path = path
         self.__name = name
         if pickle is None:
@@ -54,6 +87,7 @@ class Memoize:
         self.__read_cache = read_cache
         self.__write_cache = write_cache
         self.__verbose = verbose
+        self.__hash_func = (lambda x: None) if hash_func is None else hash_func
 
         if self.__read_cache or self.__write_cache:
             if check_func_change:
@@ -72,11 +106,29 @@ class Memoize:
 
         return self.__call__
 
+    def __hashed_args(self, args: tuple, kwargs: dict) -> Tuple[tuple, dict]:
+        new_args = []
+        new_kwargs = {}
+        for arg in args:
+            hs = self.__hash_func(arg)
+            if hs is None:
+                new_args.append(arg)
+            else:
+                new_args.append(hs)
+        for k, v in kwargs.items():
+            hs = self.__hash_func(v)
+            if hs is None:
+                new_kwargs[k] = v
+            else:
+                new_kwargs[k] = hs
+        return tuple(new_args), new_kwargs
+
     def __call__(self, *args, **kwargs):
         assert self.__path is not None and self.__name is not None and self.__pickle is not None
+        hashed_args = self.__hashed_args(args, kwargs)
         if self.__read_cache:
             for i, arg_list in enumerate(self.__db.obj[1:]):
-                if arg_list == [args, kwargs]:
+                if arg_list == hashed_args:
                     self.print(f'Match found for {args}, {kwargs} in #{i}.')
                     return load_pickle(self.__pickle, f'{self.__path}/{self.__name}/{i}.pckl')
             self.print(f'No match found for {args}, {kwargs}. Calculating the result')
@@ -84,7 +136,7 @@ class Memoize:
         if self.__write_cache:
             print(f'Dumping the result in #{len(self.__db.obj) - 1}')
             dump_pickle(self.__pickle, f'{self.__path}/{self.__name}/{len(self.__db.obj) - 1}.pckl', res)
-            self.__db.obj.append([args, kwargs])
+            self.__db.obj.append(hashed_args)
             self.__db.flush()
         return res
 
@@ -115,27 +167,39 @@ class ProgramCache:
         self.flush()
         self.__started = False
 
-    def print(self, *args, **kwargs):
-        if self.__verbose:
+    def print(self, *args, verbose: bool = None, **kwargs):
+        if verbose is None:
+            verbose = self.__verbose
+        if verbose:
             return print(f'Program caching to {self.__path}: ', *args, **kwargs)
 
     def flush(self) -> None:
         self.__storage.flush()
 
-    def loop(self, it: Iterable, verify_element: bool = True, cache_every: int = 1):
+    def loop(self, it: Iterable, verify_element: bool = True, cache_every: int = 1, all_steps: bool = True,
+             verbose: bool = None):
         assert self.__started
         for index, element in enumerate(it):
             self.__cur_state += (index,)
             if self.__cur_state in self.__storage.obj:
-                self.print(f'Skipping index state {self.__cur_state}. Setting vars={self.__vars}.')
-                self.__vars = self.__storage.obj[self.__cur_state][1]
+                if all_steps:
+                    self.__vars = self.__storage.obj[self.__cur_state][1]
+                else:
+                    self.__vars = self.__storage.obj['vars']
+                self.print(f'Skipping index state {self.__cur_state}. Setting vars={self.__vars}.', verbose=verbose)
                 if verify_element:
                     assert element == self.__storage.obj[self.__cur_state][0]
             else:
                 yield element
-                self.__storage.obj[self.__cur_state] = [element if verify_element else None, self.__vars]
+                if all_steps:
+                    self.__storage.obj[self.__cur_state] = [element if verify_element else None, self.__vars]
+                else:
+                    self.__storage.obj[self.__cur_state] = [element if verify_element else None, None]
+                    self.__storage.obj['vars'] = self.__vars
+
                 if index % cache_every == 0:
-                    self.print(f'Flushing after processing index state {self.__cur_state}. Reading vars={self.__vars}.')
+                    self.print(f'Flushing after processing index state {self.__cur_state}.'
+                               f' Caching vars={self.__vars}.', verbose=verbose)
                     self.flush()
             self.__cur_state = self.__cur_state[:-1]
 
