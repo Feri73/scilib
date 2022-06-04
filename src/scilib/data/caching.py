@@ -145,7 +145,7 @@ class ProgramCache:
     class Vars(Config):
         pass
 
-    def __init__(self, path: str, verbose: bool = True, pickle=None):
+    def __init__(self, path: str, verbose: bool = True, pickle=None, *flush_with):
         self.__started = False
         self.__cur_state = tuple()
         self.__path = path
@@ -154,6 +154,7 @@ class ProgramCache:
         self.__verbose = verbose
         self.__storage = DiskObj(path, pickle, {})
         self.__vars = self.Vars()
+        self.__flush_with = flush_with
 
     @property
     def vars(self):
@@ -175,6 +176,8 @@ class ProgramCache:
 
     def flush(self) -> None:
         self.__storage.flush()
+        for x in self.__flush_with:
+            x.flush()
 
     def loop(self, it: Iterable, verify_element: bool = True, cache_every: int = 1, all_steps: bool = True,
              verbose: bool = None):

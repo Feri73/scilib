@@ -39,7 +39,7 @@ class DiskObj:
 
 
 class NumpyMemmap:
-    def __init__(self, path: str, max_indexing_shape: Index = None, example_point: npt.NDArray = None):
+    def __init__(self, path: str, max_indexing_shape: Index = None, example_point=None):
         max_indexing_shape = self.__index_to_tuple(max_indexing_shape)
 
         self.__path = path
@@ -67,7 +67,9 @@ class NumpyMemmap:
             self.__opened_file.flush()
         self.__metadata.flush()
 
-    def __use_example(self, example_point: npt.NDArray) -> None:
+    def __use_example(self, example_point) -> None:
+        if not isinstance(example_point, np.ndarray):
+            example_point = np.array(example_point)
         if self.__metadata.obj.dtype is None:
             self.__metadata.obj.dtype = example_point.dtype
         else:
@@ -116,7 +118,7 @@ class NumpyMemmap:
         inds = self.__inds2open(self.__index_to_tuple(inds))
         return self.__opened_file[inds]
 
-    def __setitem__(self, inds: Index, value: npt.NDArray):
+    def __setitem__(self, inds: Index, value):
         if self.__metadata.obj.dtype is None or self.__metadata.obj.data_shape is None:
             self.__use_example(value)
         inds = self.__inds2open(self.__index_to_tuple(inds))
@@ -136,6 +138,8 @@ class NumpyMemmap:
         self.close()
 
     def merge_all(self, path: str) -> 'NumpyMemmap':
+        from tqdm import tqdm
+
         all_files = list(filter(lambda x: x.endswith('.npy'), os.listdir(self.__path)))
         all_parts = np.array(list(map(lambda x: list(map(int, x[:-4].split('_'))), all_files)))
         max_parts = np.max(all_parts, axis=0)
@@ -143,7 +147,7 @@ class NumpyMemmap:
                                       zip(max_parts, self.__metadata.obj.max_indexing_shape)),
                           np.zeros(self.__metadata.obj.data_shape, dtype=self.__metadata.obj.dtype))
         _ = res[tuple([0] * len(all_parts))]
-        for part, file in zip(all_parts, all_files):
+        for part, file in tqdm(list(zip(all_parts, all_files))):
             inds = tuple(slice(dim_part * dim_shape, (dim_part + 1) * dim_shape)
                          for dim_part, dim_shape in zip(part, self.__metadata.obj.max_indexing_shape))
             self.__open(file[:-4], True)
