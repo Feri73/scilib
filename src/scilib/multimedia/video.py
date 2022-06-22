@@ -64,6 +64,8 @@ class Video:
             else:
                 return -1  # can't return None because None just means bad frame, not necessarily end of video
         ret, frame = self.__vid.read()
+        if frame is not None and frame.ndim == 3 and frame.shape[-1] > 1:
+            frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
         # if not ret:
         #     raise RuntimeError('Unexpected Error!')
         self.__current_cursor += 1
