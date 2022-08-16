@@ -236,8 +236,15 @@ class EventTimeView(ArrayView1D):
 
     @accessor
     def to_sampled(self, freq: float, default_value: NPValue = None,
-                   start_time: float = 0., end_time: float = None, set_start_time: bool = False) -> SampledTimeView:
-        assert min(self.times[1:] - self.times[:-1]) >= 1 / freq
+                   start_time: float = 0., end_time: float = None, set_start_time: bool = False,
+                   multi_events: str = 'raise') -> SampledTimeView:
+        """
+        :param multi_events: what to do if multiple events are in the same period
+                'exception': check and raise exception
+                'mean': get mean
+                'sum': get sum
+        """
+        assert multi_events in ['raise', 'mean', 'sum']
 
         default_value = default_value or [0]
 
@@ -249,12 +256,22 @@ class EventTimeView(ArrayView1D):
         end_time = end_time or self.times[-1]
         n_steps = 0
         while t <= end_time:
-            if next_event_i <= len(self.times) - 1 and self.times[next_event_i] <= t:
+            events = []
+            while next_event_i <= len(self.times) - 1 and self.times[next_event_i] <= t:
                 slcs[self.axis] = [next_event_i]
-                res.append(self.numpy[tuple(slcs)])
+                events.append(self.numpy[tuple(slcs)])
                 next_event_i += 1
-            else:
+            if len(events) == 0:
                 res.append(default_value if len(res) == 0 else np.ones_like(res[0]) * default_value)
+            else:
+                if len(events) > 1:
+                    if multi_events == 'raise':
+                        raise ValueError('multiple events')
+                    elif multi_events == 'mean':
+                        events[0] = np.mean(events, axis=self.axis)
+                    elif multi_events == 'sum':
+                        events[0] = np.sum(events, axis=self.axis)
+                res.append(events[0])
             n_steps += 1
             t = n_steps / freq
         return SampledTimeView(self.axis, freq, start_time if set_start_time else 0.)(
