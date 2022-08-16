@@ -328,6 +328,8 @@ class KeyView(ArrayView1D):
     def infer_keys(self, keys: Union[str, List[str]]) -> List[str]:
         if isinstance(keys, str):
             keys = [keys]
+        if len(keys) == 0:
+            return keys
         exclude_patterns = []
         has_include_pattern = False
         final_keys = []
