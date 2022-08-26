@@ -154,7 +154,7 @@ class ProgramCache:
         self.__verbose = verbose
         self.__storage = DiskObj(path, pickle, {})
         self.__vars = self.Vars()
-        self.__flush_with = flush_with
+        self.__flush_with = list(flush_with)
 
     @property
     def vars(self):
@@ -173,6 +173,9 @@ class ProgramCache:
             verbose = self.__verbose
         if verbose:
             return print(f'Program caching to {self.__path}: ', *args, **kwargs)
+        
+    def add_flush_with(self, flushable) -> None:
+        self.__flush_with.append(flushable)
 
     def flush(self) -> None:
         self.__storage.flush()

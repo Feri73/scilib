@@ -83,10 +83,6 @@ class NumpyMemmap:
         _ = self[inds_inside_numpy]
         return self.__opened_file
 
-    def __inds2filename(self, inds) -> str:
-        return '_'.join((str(dim_ind // dim_max_len)
-                         for dim_max_len, dim_ind in zip(self.__metadata.obj.max_indexing_shape, inds)))
-
     def __open(self, filename: str, flush: bool) -> None:
         if flush:
             self.flush()
