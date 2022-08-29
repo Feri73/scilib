@@ -1,7 +1,8 @@
 from functools import partial
 from numbers import Number
-from typing import Union, List, Callable, Tuple
+from typing import Union, List, Callable, Tuple, Literal
 from .utils import np, npt, NPValue, NPIndex
+from .. import arrays
 
 Axes = List[int]
 
@@ -156,6 +157,8 @@ class SampledTimeView(ArrayView1D):
             if times < 0:
                 raise ValueError()
         elif isinstance(times, slice):
+            if times.step is not None and times.step < 0:
+                raise ValueError()
             orig_slice = times
             step = times.step if times.step is None else times.step * self.freq
             if step is not None and int(step) < step:
@@ -165,7 +168,7 @@ class SampledTimeView(ArrayView1D):
                 times = slice(times.start if times.start is None else int((times.start - self.start_time) * self.freq),
                               times.stop if times.stop is None else int((times.stop - self.start_time) * self.freq),
                               step if step is None else int(step))
-                if times.start is not None and times.start < 0:
+                if times.start is not None and (times.start < 0 or times.stop < 0):
                     raise ValueError()
         else:
             times = [int((t - self.start_time) * self.freq) for t in times]
@@ -179,6 +182,31 @@ class SampledTimeView(ArrayView1D):
         else:
             return ArrayView1D(self.axis)(res)
 
+    @arrays.VERSION.check_assumption(sampeld_time_view_inds='non-neg;+s_time')
+    def __setitem__(self, times: NPIndex, value: NPValue) -> None:
+        if isinstance(times, Number):
+            times = int(self.freq * (times - self.start_time))
+            if times < 0:
+                raise ValueError()
+        elif isinstance(times, slice):
+            if times.step is not None and times.step < 0:
+                raise ValueError()
+            step = times.step if times.step is None else times.step * self.freq
+            if step is not None and int(step) < step:
+                raise ValueError()
+            else:
+                times = slice(times.start if times.start is None else int((times.start - self.start_time) * self.freq),
+                              times.stop if times.stop is None else int((times.stop - self.start_time) * self.freq),
+                              step if step is None else int(step))
+                if times.start is not None and times.start < 0 or times.stop < 0:
+                    raise ValueError()
+        else:
+            times = [int((t - self.start_time) * self.freq) for t in times]
+            for t in times:
+                if t < 0:
+                    raise ValueError()
+        super(SampledTimeView, self).__setitem__(times, value)
+
     @accessor
     def take(self, start_time: float = None, duration: float = None, freq: float = None,
              set_start_time: bool = False) -> 'SampledTimeView':
@@ -188,6 +216,8 @@ class SampledTimeView(ArrayView1D):
         start_ind = int((start_time - self.start_time) * self.freq)
         inds = []
         while len(inds) < duration * freq:
+            if start_ind < 0:
+                raise ValueError()
             inds.append(start_ind)
             start_ind += int(self.freq / freq)
         return self._new(self.axis, freq, start_time, set_start_time)(super(SampledTimeView, self).__getitem__(inds))
@@ -195,17 +225,6 @@ class SampledTimeView(ArrayView1D):
     @accessor
     def start_at(self, start_time: float):
         return self._new(self.axis, self.freq, start_time, True)(self.numpy)
-
-    def __setitem__(self, times: NPIndex, value: NPValue) -> None:
-        if isinstance(times, Number):
-            times = int(self.freq * times)
-        elif isinstance(times, slice):
-            times = slice(times.start if times.start is None else int(times.start * self.freq),
-                          times.stop if times.stop is None else int(times.stop * self.freq),
-                          times.step if times.step is None else int(times.step * self.freq))
-        else:
-            times = [int(t * self.freq) for t in times]
-        super(SampledTimeView, self).__setitem__(times, value)
 
     def conv_weight(self, duration: float, per_sample: bool = True) -> NPValue:
         return 1 / (duration * (self.freq if per_sample else 1)) * np.ones(int(duration * self.freq))
@@ -235,10 +254,11 @@ class EventTimeView(ArrayView1D):
         return super(EventTimeView, self).__call__(numpy, axes)
 
     @accessor
-    def to_sampled(self, freq: float, default_value: NPValue = None,
+    def to_sampled(self, freq: float, default_value: Union[NPValue, Literal['last']],
                    start_time: float = 0., end_time: float = None, set_start_time: bool = False,
-                   multi_events: str = 'raise') -> SampledTimeView:
+                   multi_events: Union[Literal['raise', 'mean', 'sum']] = 'raise') -> SampledTimeView:
         """
+        :param default_value: if 'last', use the last value of the array or zero if it is the start of the array
         :param multi_events: what to do if multiple events are in the same period
                 'exception': check and raise exception
                 'mean': get mean
@@ -246,10 +266,9 @@ class EventTimeView(ArrayView1D):
         """
         assert multi_events in ['raise', 'mean', 'sum']
 
-        default_value = default_value or [0]
-
         slcs = [slice(None)] * len(self.numpy.shape)
 
+        initial_no_data_count = 0
         res = []
         t = start_time
         next_event_i = 0
@@ -262,7 +281,13 @@ class EventTimeView(ArrayView1D):
                 events.append(self.numpy[tuple(slcs)])
                 next_event_i += 1
             if len(events) == 0:
-                res.append(default_value if len(res) == 0 else np.ones_like(res[0]) * default_value)
+                if len(res) == 0:
+                    initial_no_data_count += 1
+                else:
+                    if default_value == 'last':
+                        res.append(res[-1])
+                    else:
+                        res.append(np.ones_like(res[0]) * default_value)
             else:
                 if len(events) > 1:
                     if multi_events == 'raise':
@@ -272,6 +297,13 @@ class EventTimeView(ArrayView1D):
                     elif multi_events == 'sum':
                         events[0] = np.sum(events, axis=self.axis)
                 res.append(events[0])
+                if initial_no_data_count > 0:
+                    for _ in range(initial_no_data_count):
+                        if default_value == 'last':
+                            res.insert(0, np.zeros_like(res[-1]))
+                        else:
+                            res.insert(0, np.ones_like(res[-1]) * default_value)
+                    initial_no_data_count = 0
             n_steps += 1
             t = n_steps / freq
         return SampledTimeView(self.axis, freq, start_time if set_start_time else 0.)(
