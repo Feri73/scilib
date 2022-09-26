@@ -218,8 +218,8 @@ class SampledTimeView(ArrayView1D):
         while len(inds) < duration * freq:
             if start_ind < 0:
                 raise ValueError()
-            inds.append(start_ind)
-            start_ind += int(self.freq / freq)
+            inds.append(int(start_ind))
+            start_ind = start_ind + self.freq / freq
         return self._new(self.axis, freq, start_time, set_start_time)(super(SampledTimeView, self).__getitem__(inds))
 
     @accessor
