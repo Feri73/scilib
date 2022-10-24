@@ -137,12 +137,12 @@ class Version:
 
         def decorator(func: Callable) -> Callable:
             def wrapper(*args, **kwargs):
-                for name, values in required_assumptions.items():
-                    if name not in self.user_assumptions or self.user_assumptions[name] not in values:
+                for name, value in required_assumptions.items():
+                    if name not in self.user_assumptions or self.user_assumptions[name] !=value:
                         raise BadAssumption(
                             f'Assumption {name} in {self.unit_name} is ' +
                             (self.user_assumptions[name] if name in self.user_assumptions else 'non existent') +
-                            f' but should be one of {values}.')
+                            f' but should be {value}.')
                 return func(*args, **kwargs)
 
             return wrapper

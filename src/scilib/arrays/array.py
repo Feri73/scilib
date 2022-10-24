@@ -339,23 +339,24 @@ class KeyView(ArrayView1D):
     def keys(self):
         return self.__keys
 
+    @arrays.VERSION.check_assumption(key_view_plain_pattern='equality')
     def __update_keys(self, pattern: str, keys: List[str]) -> List[str]:
         if pattern.startswith('!<'):
-            return [x for x in keys if not pattern[2:] in x]
+            return [x for x in keys if pattern[2:] not in x]
+        if pattern.startswith('!$'):
+            return [x for x in keys if not x.startswith(pattern[2:])]
+        if pattern.startswith('!') and pattern.endswith('$'):
+            return [x for x in keys if not x.endswith(pattern[1:-1])]
         if pattern.startswith('!'):
-            return [x for x in keys if not x.startswith(pattern[1:])]
-        if pattern.endswith('!'):
-            return [x for x in keys if not x.endswith(pattern[:-1])]
-        if pattern.startswith('@<'):
-            return keys + [x for x in self.__keys if pattern[2:] in x]
-        if pattern.startswith('@'):
-            return keys + [x for x in self.__keys if x.startswith(pattern[1:])]
-        if pattern.endswith('@'):
-            return keys + [x for x in self.__keys if x.endswith(pattern[:-1])]
+            return [x for x in keys if x != pattern[1:]]
         if pattern.startswith('<'):
-            return keys + [x for x in self.__keys if pattern[2:] in x]
+            return keys + [x for x in self.__keys if pattern[1:] in x]
+        if pattern.startswith('$'):
+            return keys + [x for x in self.__keys if x.startswith(pattern[1:])]
+        if pattern.endswith('$'):
+            return keys + [x for x in self.__keys if x.endswith(pattern[:-1])]
         else:
-            return keys + [x for x in self.__keys if x.startswith(pattern)]
+            return keys + [x for x in self.__keys if x == pattern]
 
     def infer_keys(self, keys: Union[str, List[str]]) -> List[str]:
         if isinstance(keys, str):
