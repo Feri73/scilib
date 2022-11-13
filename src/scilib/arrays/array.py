@@ -163,7 +163,7 @@ class SampledTimeView(ArrayView1D):
             orig_slice = times
             step = times.step if times.step is None else times.step * self.freq
             if step is not None and int(step) < step:
-                times = np.arange(times.start or self.start_time, times.stop or len(self) / self.freq, times.step)
+                times = np.arange(times.start or self.start_time, times.stop or self.times[-1], times.step)
                 return self._new(self.axis, step / self.freq, times[0], False)(self[times])
             else:
                 times = slice(times.start if times.start is None else int((times.start - self.start_time) * self.freq),
