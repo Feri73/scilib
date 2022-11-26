@@ -40,6 +40,8 @@ def nanci(data: NPValue, axis: NPAxis, confidence: float = 0.95, keepdims: bool 
     a = np.reshape(a, (np.prod(a.shape[:len(axis)]), *a.shape[len(axis):]))
     h = scipy.stats.sem(a, nan_policy='omit') * scipy.stats.t.ppf((1 + confidence) / 2.,
                                                                   (len(a) - np.sum(np.isnan(a), axis=0)) - 1)
+    if isinstance(h, np.ma.MaskedArray):
+        h = np.where(np.logical_not(h.mask), h, np.nan)
     if keepdims:
         h = np.expand_dims(h, axis)
     return h
