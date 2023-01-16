@@ -387,6 +387,18 @@ class KeyView(ArrayView1D):
         keys = self.infer_keys(keys)
         return KeyView(self.axis, *keys)(super(KeyView, self).__getitem__([self.__reverse_keys[key] for key in keys]))
 
+    @accessor
+    def appended(self, value: NPValue, *keys: str) -> 'KeyView':
+        value = self._to_ndarray(value)
+        assert all([key not in self.__keys for key in keys])
+        if (self.numpy.shape[:self.axis] + self.numpy.shape[self.axis + 1:]) == value.shape:
+            value = np.expand_dims(value, self.axis)
+        else:
+            assert self.numpy.shape[:self.axis] == value.shape[:self.axis]
+            assert self.numpy.shape[self.axis + 1:] == value.shape[self.axis + 1:]
+        assert len(keys) == value.shape[self.axis]
+        return KeyView(self.axis, *self.__keys, *keys)(np.append(self.numpy, value, axis=self.axis))
+
     def __setitem__(self, keys: Union[str, List[str]], value: NPValue) -> None:
         """
         needs to return elements in the order keys are given
