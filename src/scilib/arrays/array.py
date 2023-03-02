@@ -114,6 +114,16 @@ class ArrayView1D(ArrayView):
         return self(func(self.numpy, axis=self.axis, keepdims=True, **kwargs))
 
     @accessor
+    def appended(self, value: NPValue) -> 'ArrayView1D':
+        value = self._to_ndarray(value)
+        if (self.numpy.shape[:self.axis] + self.numpy.shape[self.axis + 1:]) == value.shape:
+            value = np.expand_dims(value, self.axis)
+        else:
+            assert self.numpy.shape[:self.axis] == value.shape[:self.axis]
+            assert self.numpy.shape[self.axis + 1:] == value.shape[self.axis + 1:]
+        return self(np.append(self.numpy, value, axis=self.axis))
+
+    @accessor
     def apply(self, func: Callable, **kwargs):
         return self(func(self.numpy, axis=self.axis, **kwargs))
 
@@ -397,7 +407,7 @@ class KeyView(ArrayView1D):
             assert self.numpy.shape[:self.axis] == value.shape[:self.axis]
             assert self.numpy.shape[self.axis + 1:] == value.shape[self.axis + 1:]
         assert len(keys) == value.shape[self.axis]
-        return KeyView(self.axis, *self.__keys, *keys)(np.append(self.numpy, value, axis=self.axis))
+        return KeyView(self.axis, *self.__keys, *keys)(super(KeyView, self).appended(value))
 
     def __setitem__(self, keys: Union[str, List[str]], value: NPValue) -> None:
         """
