@@ -1,6 +1,10 @@
 from functools import partial
 from numbers import Number
-from typing import Union, List, Callable, Tuple, Literal
+from typing import Union, List, Callable, Tuple
+try:
+    from typing import Literal
+except ImportError:
+    from typing_extensions import Literal
 from .utils import np, npt, NPValue, NPIndex
 from .. import arrays
 
@@ -267,11 +271,11 @@ class EventTimeView(ArrayView1D):
     @accessor
     def to_sampled(self, freq: float, default_value: Union[NPValue, Literal['last']],
                    start_time: float = 0., end_time: float = None, set_start_time: bool = False,
-                   multi_events: Union[Literal['raise', 'mean', 'sum']] = 'raise') -> SampledTimeView:
+                   multi_events: Literal['raise', 'mean', 'sum'] = 'raise') -> SampledTimeView:
         """
         :param default_value: if 'last', use the last value of the array or zero if it is the start of the array
         :param multi_events: what to do if multiple events are in the same period
-                'exception': check and raise exception
+                'raise': check and raise exception
                 'mean': get mean
                 'sum': get sum
         """

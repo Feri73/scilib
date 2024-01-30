@@ -1,4 +1,9 @@
-from typing import Union, Literal
+from typing import Union
+
+try:
+    from typing import Literal
+except ImportError:
+    from typing_extensions import Literal
 
 import cv2
 import numpy as np
@@ -26,7 +31,7 @@ class Video:
         example_frame = self.read_frame(0)
         self.__set_cursor(0)
         return Video(cv2_vid=cv2.VideoWriter(path, int(self.__vid.get(cv2.CAP_PROP_FOURCC)), self.fps(),
-                                             example_frame.shape[:2],
+                                             (example_frame.shape[1], example_frame.shape[0]),
                                              bool(self.__vid.get(cv2.VIDEOWRITER_PROP_IS_COLOR))))
 
     @property
@@ -72,10 +77,10 @@ class Video:
         return frame
 
     # returns None for corrupted frames or in case frame count is wrong (for the extra frames)
-    def read(self, frame_inds: SampledTimeView = None, error_on_overflow: bool = False) -> npt.NDArray:
+    def read(self, frame_inds: npt.NDArray = None, error_on_overflow: bool = False) -> npt.NDArray:
         if frame_inds is None:
-            frame_inds = self.frame_inds()
-        for ind in frame_inds.numpy:
+            frame_inds = self.frame_inds().numpy
+        for ind in frame_inds:
             frame = self.read_frame(ind, error_on_overflow)
             if isinstance(frame, int) and frame == -1:
                 return
