@@ -58,7 +58,10 @@ class Memoize:
     @staticmethod
     def func_summary(func: Callable) -> str:
         try:
-            src = inspect.getsource(func)
+            if isinstance(func, Memoize):
+                src = inspect.getsource(func.__func)
+            else:
+                src = inspect.getsource(func)
         except OSError:
             src = '1'
         if func in Depends.dependants:
@@ -104,7 +107,7 @@ class Memoize:
         else:
             self.print(f'Memoize disabled for {path}/{name}.')
 
-        return self.__call__
+        return self
 
     def __hashed_args(self, args: tuple, kwargs: dict) -> Tuple[tuple, dict]:
         new_args = []
