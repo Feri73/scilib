@@ -1,6 +1,7 @@
 from functools import partial
 from numbers import Number
 from typing import Union, List, Callable, Tuple
+
 try:
     from typing import Literal
 except ImportError:
@@ -166,36 +167,34 @@ class SampledTimeView(ArrayView1D):
                          (self.start_time * self.freq + len(self)) / self.freq, 1 / self.freq)[:len(self)]
 
     @accessor
+    @arrays.VERSION.check_assumption(sampeld_time_view_interpolation='linear')
     def __getitem__(self, times: NPIndex) -> Union[ArrayView1D, 'SampledTimeView']:
         if isinstance(times, Number):
-            times = int(self.freq * (times - self.start_time))
-            if times < 0:
+            indices = self.freq * (times - self.start_time)
+            if indices < 0:
                 raise ValueError()
         elif isinstance(times, slice):
             if times.step is not None and times.step < 0:
                 raise ValueError()
-            orig_slice = times
-            step = times.step if times.step is None else times.step * self.freq
-            if step is not None and int(step) < step:
-                times = np.arange(times.start or self.start_time, times.stop or self.times[-1], times.step)
-                return self._new(self.axis, step / self.freq, times[0], False)(self[times])
-            else:
-                times = slice(times.start if times.start is None else int((times.start - self.start_time) * self.freq),
-                              times.stop if times.stop is None else int((times.stop - self.start_time) * self.freq),
-                              step if step is None else int(step))
-                if times.start is not None and (times.start < 0 or times.stop < 0):
-                    raise ValueError()
+            freq = self.freq if times.step is None else 1. / times.step
+            step = 1. / self.freq if times.step is None else times.step
+            times = np.arange(times.start or self.start_time, times.stop or self.times[-1], step)
+            if times[0] in self.times and step % (1. / self.freq) == 0:
+                return super(SampledTimeView, self).__getitem__(
+                    slice(int((times[0] - self.start_time) * self.freq),
+                          int((times[-1] - self.start_time) * self.freq) + 1, int(step * self.freq)))
+            return self._new(self.axis, freq, times[0], False)(self[times])
         else:
-            times = [int((t - self.start_time) * self.freq) for t in times]
-            for t in times:
-                if t < 0:
-                    raise ValueError()
-        res = super(SampledTimeView, self).__getitem__(times)
-        if isinstance(times, slice):
-            return self._new(self.axis, 1 / (orig_slice.step or 1 / self.freq),
-                             orig_slice.start or self.start_time, False)(res)
-        else:
-            return ArrayView1D(self.axis)(res)
+            indices = (np.array(times) - self.start_time) * self.freq
+            if np.any(indices < 0):
+                raise ValueError()
+        floor_inds = np.floor(indices)
+        ceil_inds = np.ceil(indices)
+        floor_res = super(SampledTimeView, self).__getitem__(floor_inds.astype(np.int32)).numpy
+        ceil_res = super(SampledTimeView, self).__getitem__(ceil_inds.astype(np.int32)).numpy
+        res = floor_res + (ceil_res - floor_res) / (ceil_inds - floor_inds) * (indices - floor_inds)
+        res[np.isnan(res)] = floor_res[np.isnan(res)]
+        return ArrayView1D(self.axis)(res)
 
     @arrays.VERSION.check_assumption(sampeld_time_view_inds='non-neg;+s_time')
     def __setitem__(self, times: NPIndex, value: NPValue) -> None:
