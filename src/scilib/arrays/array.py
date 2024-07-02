@@ -426,7 +426,11 @@ class KeyView(ArrayView1D):
             assert self.numpy.shape[:self.axis] == value.shape[:self.axis]
             assert self.numpy.shape[self.axis + 1:] == value.shape[self.axis + 1:]
         assert len(keys) == value.shape[self.axis]
-        return KeyView(self.axis, *self.__keys, *keys)(super(KeyView, self).appended(value))
+
+        new_view = self.copy()
+        new_view = new_view(self)
+        new_view.__keys = [*self.__keys, *keys]
+        return super(KeyView, new_view).appended(value)
 
     def __setitem__(self, keys: Union[str, List[str]], value: NPValue) -> None:
         """
