@@ -121,6 +121,9 @@ class Version:
                                         f'{self.user_assumptions[name]} but is now {user_assumptions[name]}.')
                 self.user_assumptions[name] = user_assumptions[name]
             else:
+                if name in self.user_assumptions and self.user_assumptions[name] is not None:
+                    raise BadAssumption(f'Assumption {name} in {self.unit_name} already assumed to be '
+                                        f'{self.user_assumptions[name]} but is now not given.')
                 self.user_assumptions[name] = None
 
     def check_assumption(self, **required_assumptions: tuple) -> Callable[[Callable], Callable]:
@@ -144,7 +147,7 @@ class Version:
                     if name not in self.user_assumptions or self.user_assumptions[name] != value:
                         raise BadAssumption(
                             f'Assumption {name} in {self.unit_name} is ' +
-                            (self.user_assumptions[name] if name in self.user_assumptions else 'non existent') +
+                            str(self.user_assumptions[name] if name in self.user_assumptions else 'non existent') +
                             f' but should be {value}.')
                 return func(*args, **kwargs)
 

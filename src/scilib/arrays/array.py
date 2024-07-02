@@ -192,6 +192,9 @@ class SampledTimeView(ArrayView1D):
         ceil_inds = np.ceil(indices)
         floor_res = super(SampledTimeView, self).__getitem__(floor_inds.astype(np.int32)).numpy
         ceil_res = super(SampledTimeView, self).__getitem__(ceil_inds.astype(np.int32)).numpy
+        ceil_inds = np.reshape(ceil_inds, [1 if i != self.axis else -1 for i in range(len(self.numpy.shape))])
+        floor_inds = np.reshape(floor_inds, [1 if i != self.axis else -1 for i in range(len(self.numpy.shape))])
+        indices = np.reshape(indices, [1 if i != self.axis else -1 for i in range(len(self.numpy.shape))])
         res = floor_res + (ceil_res - floor_res) / (ceil_inds - floor_inds) * (indices - floor_inds)
         res[np.isnan(res)] = floor_res[np.isnan(res)]
         return ArrayView1D(self.axis)(res)
@@ -261,7 +264,7 @@ class EventTimeView(ArrayView1D):
         axes = self._correct_axes(axes)
         axes = axes or [self.axis]
         if isinstance(numpy, ArrayView):
-            assert len(axes) == 1 and len(numpy) == len(self.times)
+            assert len(axes) == 1 and numpy.shape[axes[0]] == len(self.times)
         else:
             numpy = self._to_ndarray(numpy)
             assert len(axes) == 1 and numpy.shape[axes[0]] == len(self.times)
@@ -345,6 +348,16 @@ class KeyView(ArrayView1D):
         self.__keys = keys
         self.__reverse_keys = {k: i for i, k in enumerate(keys)}
 
+    def __call__(self, numpy: Union[NPValue, 'ArrayView'], axes: Union[Axes, int] = None):
+        axes = self._correct_axes(axes)
+        axes = axes or [self.axis]
+        if isinstance(numpy, ArrayView):
+            assert len(axes) == 1 and numpy.numpy.shape[axes[0]] == len(self.keys)
+        else:
+            numpy = self._to_ndarray(numpy)
+            assert len(axes) == 1 and numpy.shape[axes[0]] == len(self.keys)
+        return super(KeyView, self).__call__(numpy, axes)
+
     def copy(self, axes: Union[int, Axes] = None) -> 'KeyView':
         axes = self._correct_axes(axes)
         return KeyView((self.axes if axes is None else axes)[0], *self.__keys)
@@ -398,7 +411,10 @@ class KeyView(ArrayView1D):
         needs to return elements in the order keys are given
         """
         keys = self.infer_keys(keys)
-        return KeyView(self.axis, *keys)(super(KeyView, self).__getitem__([self.__reverse_keys[key] for key in keys]))
+        new_view = self.copy()
+        new_view = new_view(self)
+        new_view.__keys = keys
+        return super(KeyView, new_view).__getitem__([self.__reverse_keys[key] for key in keys])
 
     @accessor
     def appended(self, value: NPValue, *keys: str) -> 'KeyView':
@@ -517,10 +533,15 @@ class Array(metaclass=ArrayMeta):
         axes = []
         for view_name in views:
             axes += self.views[view_name].axes
-        res = self(func(self.numpy, axis=tuple(axes), keepdims=True, **kwargs))
+        res = Array(**{view_name: ArrayView(view.axes) for view_name, view in self.views.items()})(
+            func(self.numpy, axis=tuple(axes), keepdims=True, **kwargs))
         if not keepdims:
             res = res.squeeze(*views)
-        return res
+        numpy = res.numpy
+        for view_name, view in res.views.items():
+            if view_name in self.views:
+                res.views[view_name] = self.views[view_name].copy(view.axes)
+        return res(numpy)
 
     def squeeze(self, *views: str, all_ones: bool = False) -> 'Array':
         if len(views) == 1 and views[0] is True:
@@ -577,10 +598,11 @@ class Array(metaclass=ArrayMeta):
                 view = ArrayView1D(self.ndim)
             else:
                 view_name, view = list(views.items())[0]
-            arrays = tuple(array.expand(**{view_name: view}) for array in arrays)
+            arrays = tuple(array.expand(**{view_name: ArrayView1D(view.axis)}) for array in arrays)
             if view_name == '__tmp__':
                 for array in arrays:
                     delattr(array, view_name)
             self = arrays[0]
+            self.views[view_name] = view
 
         return self(np.concatenate(tuple(x.numpy for x in arrays), axis=view.axis))
