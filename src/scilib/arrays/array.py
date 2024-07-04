@@ -43,7 +43,7 @@ class ArrayView(metaclass=ArrayViewMeta):
         return array if isinstance(array, np.ndarray) else np.array(array)
 
     def copy(self, axes: Axes = None) -> 'ArrayView':
-        return ArrayView(self.axes if axes is None else axes)
+        return ArrayView(self.axes if axes is None else axes.copy())
 
     @property
     def numpy(self) -> npt.NDArray:
@@ -101,7 +101,7 @@ class ArrayView1D(ArrayView):
 
     def copy(self, axes: Union[Axes, int] = None) -> 'ArrayView1D':
         axes = self._correct_axes(axes)
-        return ArrayView1D((self.axes if axes is None else axes)[0])
+        return ArrayView1D((self.axes if axes is None else axes.copy())[0])
 
     def __call__(self, numpy: Union[NPValue, 'ArrayView'], axes: Union[Axes, int] = None):
         axes = self._correct_axes(axes)
@@ -151,7 +151,7 @@ class SampledTimeView(ArrayView1D):
 
     def copy(self, axes: Union[int, Axes] = None) -> 'SampledTimeView':
         axes = self._correct_axes(axes)
-        return self._new((self.axes if axes is None else axes)[0], self.freq, self.start_time, True)
+        return self._new((self.axes if axes is None else axes.copy())[0], self.freq, self.start_time, True)
 
     @property
     def freq(self) -> float:
@@ -258,7 +258,7 @@ class EventTimeView(ArrayView1D):
 
     def copy(self, axes: Union[int, Axes] = None) -> 'EventTimeView':
         axes = self._correct_axes(axes)
-        return EventTimeView((self.axes if axes is None else axes)[0], self.times)
+        return EventTimeView((self.axes if axes is None else axes.copy())[0], self.times)
 
     def __call__(self, numpy: Union[NPValue, 'ArrayView'], axes: Union[Axes, int] = None):
         axes = self._correct_axes(axes)
@@ -360,7 +360,7 @@ class KeyView(ArrayView1D):
 
     def copy(self, axes: Union[int, Axes] = None) -> 'KeyView':
         axes = self._correct_axes(axes)
-        return KeyView((self.axes if axes is None else axes)[0], *self.__keys)
+        return KeyView((self.axes if axes is None else axes.copy())[0], *self.__keys)
 
     @property
     def keys(self):
