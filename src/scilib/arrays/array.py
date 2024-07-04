@@ -358,6 +358,17 @@ class KeyView(ArrayView1D):
             assert len(axes) == 1 and numpy.shape[axes[0]] == len(self.keys)
         return super(KeyView, self).__call__(numpy, axes)
 
+    def _list_to_slice(self, lst):
+        if not lst:
+            return lst
+        step = lst[1] - lst[0] if len(lst) > 1 else 1
+        for i in range(len(lst) - 1):
+            if lst[i + 1] - lst[i] != step:
+                return lst
+        start = lst[0]
+        stop = lst[-1] + step
+        return slice(start, stop, step)
+
     def copy(self, axes: Union[int, Axes] = None) -> 'KeyView':
         axes = self._correct_axes(axes)
         return KeyView((self.axes if axes is None else axes.copy())[0], *self.__keys)
@@ -414,7 +425,7 @@ class KeyView(ArrayView1D):
         new_view = self.copy()
         new_view = new_view(self)
         new_view.__keys = keys
-        return super(KeyView, new_view).__getitem__([self.__reverse_keys[key] for key in keys])
+        return super(KeyView, new_view).__getitem__(self._list_to_slice([self.__reverse_keys[key] for key in keys]))
 
     @accessor
     def appended(self, value: NPValue, *keys: str) -> 'KeyView':
