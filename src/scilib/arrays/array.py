@@ -180,16 +180,22 @@ class SampledTimeView(ArrayView1D):
             step = 1. / self.freq if times.step is None else times.step
             times = np.arange(times.start or self.start_time, times.stop or self.times[-1], step)
             if times[0] in self.times and step % (1. / self.freq) == 0:
-                return super(SampledTimeView, self).__getitem__(
-                    slice(int((times[0] - self.start_time) * self.freq),
-                          int((times[-1] - self.start_time) * self.freq) + 1, int(step * self.freq)))
-            return self._new(self.axis, freq, times[0], False)(self[times])
+                res = super(SampledTimeView, self).__getitem__(
+                    slice(round((times[0] - self.start_time) * self.freq),
+                          round((times[-1] - self.start_time) * self.freq) + 1, round(step * self.freq)))
+            else:
+                res = self[times]
+            return self._new(self.axis, freq, times[0], False)(res)
         else:
             indices = (np.array(times) - self.start_time) * self.freq
             if np.any(indices < 0):
                 raise ValueError()
         floor_inds = np.floor(indices)
         ceil_inds = np.ceil(indices)
+        valid_ceil_inds_is = ceil_inds < len(self)
+        floor_inds = floor_inds[valid_ceil_inds_is]
+        ceil_inds = ceil_inds[valid_ceil_inds_is]
+        indices = indices[valid_ceil_inds_is]
         floor_res = super(SampledTimeView, self).__getitem__(floor_inds.astype(np.int32)).numpy
         ceil_res = super(SampledTimeView, self).__getitem__(ceil_inds.astype(np.int32)).numpy
         ceil_inds = np.reshape(ceil_inds, [1 if i != self.axis else -1 for i in range(len(self.numpy.shape))])
@@ -361,12 +367,15 @@ class KeyView(ArrayView1D):
     def _list_to_slice(self, lst):
         if not lst:
             return lst
+        assert all([x >= 0 for x in lst])
         step = lst[1] - lst[0] if len(lst) > 1 else 1
         for i in range(len(lst) - 1):
             if lst[i + 1] - lst[i] != step:
                 return lst
         start = lst[0]
         stop = lst[-1] + step
+        if stop < 0:
+            stop = None
         return slice(start, stop, step)
 
     def copy(self, axes: Union[int, Axes] = None) -> 'KeyView':
