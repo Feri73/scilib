@@ -32,7 +32,8 @@ class Memoize:
                 raise ValueError()
 
         def __eq__(self, other) -> bool:
-            return type(self) == type(other) and self.np.all(self.__value == other.__value)
+            return (type(self) == type(other) and self.__value.shape == other.__value.shape and
+                    self.np.all(self.__value == other.__value))
 
         def __ne__(self, other) -> bool:
             return not (self == other)
