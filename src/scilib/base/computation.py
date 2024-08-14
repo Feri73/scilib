@@ -90,6 +90,12 @@ class Node(ABC, metaclass=NodeMeta):
     def __str__(self) -> str:
         return self.name
 
+    def _get_inner_state(self):
+        return self.__is_active
+
+    def _set_inner_state(self, is_active: bool):
+        self.__is_active = is_active
+
 
 class Variable(Node):
     def __init__(self, func: Callable, name: Optional[str] = None, *nodes: 'Node', **kwnodes: 'Node'):
@@ -112,6 +118,15 @@ class Variable(Node):
             kwnodes_vals[kw] = _node_dict[node]
         _node_dict[self] = self.__func(*nodes_vals, **kwnodes_vals)
         return args, kwargs
+
+    @staticmethod
+    def _recreate(func: Callable, name: Optional[str], nodes: List['Node'], kwnodes: Dict[str, 'Node'], state: Any):
+        ret = Variable(func, name, *nodes, **kwnodes)
+        ret._set_inner_state(state)
+        return ret
+
+    def __reduce__(self):
+        return self._recreate, (self.__func, self.name, self.__nodes, self._kwnodes, self._get_inner_state())
 
 
 class Constant(Variable):
@@ -153,6 +168,15 @@ class PlaceHolder(Node):
         del self.__ph_names[self.name]
         return self
 
+    @staticmethod
+    def _recreate(name: Optional[str], state: Any):
+        ret = PlaceHolder(name)
+        ret._set_inner_state(state)
+        return ret
+
+    def __reduce__(self):
+        return self._recreate, (self.name, self._get_inner_state())
+
 
 PH = PlaceHolder
 
@@ -180,6 +204,13 @@ class Function:
             if cls is not None:
                 return cls(res)
         return res
+
+    @staticmethod
+    def _recreate(func: Callable):
+        return Function(func)
+
+    def __reduce__(self):
+        return self._recreate, (self.__func,)
 
 
 Func = Function
