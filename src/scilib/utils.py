@@ -125,6 +125,9 @@ class Version:
                     raise BadAssumption(f'Assumption {name} in {self.unit_name} already assumed to be '
                                         f'{self.user_assumptions[name]} but is now not given.')
                 self.user_assumptions[name] = None
+        for name in user_assumptions:
+            if name not in self.user_assumptions:
+                self.user_assumptions[name] = user_assumptions[name]
 
     def check_assumption(self, **required_assumptions: tuple) -> Callable[[Callable], Callable]:
         """
