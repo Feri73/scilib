@@ -2,6 +2,7 @@
 !.gitignore
 !setup.cfg
 !setup.py
+!pyproject.toml
 !todo
 !src
 !src/*
