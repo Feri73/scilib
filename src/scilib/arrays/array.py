@@ -178,7 +178,8 @@ class SampledTimeView(ArrayView1D):
                 raise ValueError()
             freq = self.freq if times.step is None else 1. / times.step
             step = 1. / self.freq if times.step is None else times.step
-            times = np.arange(times.start or self.start_time, times.stop or self.times[-1], step)
+            times = np.arange(self.start_time if times.start is None else times.start,
+                              self.times[-1] if times.stop is None else times.stop, step)
             if times[0] in self.times and step % (1. / self.freq) == 0:
                 res = super(SampledTimeView, self).__getitem__(
                     slice(round((times[0] - self.start_time) * self.freq),
@@ -233,9 +234,9 @@ class SampledTimeView(ArrayView1D):
     @accessor
     def take(self, start_time: float = None, duration: float = None, freq: float = None,
              set_start_time: bool = False) -> 'SampledTimeView':
-        start_time = start_time or self.start_time
-        duration = duration or self.times[-1] - self.times[0]
-        freq = freq or self.freq
+        start_time = self.start_time if start_time is None else start_time
+        duration = self.times[-1] - self.times[0] if duration is None else duration
+        freq = self.freq if freq is None else freq
         start_ind = int((start_time - self.start_time) * self.freq)
         inds = []
         while len(inds) < duration * freq:
@@ -268,7 +269,7 @@ class EventTimeView(ArrayView1D):
 
     def __call__(self, numpy: Union[NPValue, 'ArrayView'], axes: Union[Axes, int] = None):
         axes = self._correct_axes(axes)
-        axes = axes or [self.axis]
+        axes = [self.axis] if axes is None else axes
         if isinstance(numpy, ArrayView):
             assert len(axes) == 1 and numpy.shape[axes[0]] == len(self.times)
         else:
@@ -295,7 +296,7 @@ class EventTimeView(ArrayView1D):
         res = []
         t = start_time
         next_event_i = 0
-        end_time = end_time or self.times[-1]
+        end_time = self.times[-1] if end_time is None else end_time
         n_steps = 0
         while t <= end_time:
             events = []
@@ -356,7 +357,7 @@ class KeyView(ArrayView1D):
 
     def __call__(self, numpy: Union[NPValue, 'ArrayView'], axes: Union[Axes, int] = None):
         axes = self._correct_axes(axes)
-        axes = axes or [self.axis]
+        axes = [self.axis] if axes is None else axes
         if isinstance(numpy, ArrayView):
             assert len(axes) == 1 and numpy.numpy.shape[axes[0]] == len(self.keys)
         else:
@@ -564,7 +565,10 @@ class Array(metaclass=ArrayMeta):
         numpy = res.numpy
         for view_name, view in res.views.items():
             if view_name in self.views:
-                res.views[view_name] = self.views[view_name].copy(view.axes)
+                if view_name in views:
+                    res.views[view_name] = ArrayView(view.axes)
+                else:
+                    res.views[view_name] = self.views[view_name].copy(view.axes)
         return res(numpy)
 
     def squeeze(self, *views: str, all_ones: bool = False) -> 'Array':
