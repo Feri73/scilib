@@ -45,9 +45,9 @@ class Node(ABC, metaclass=NodeMeta):
 
     def __init__(self, name: str = None):
         if name is None:
-            name = f'{self.__class__.__name__}_{self.__global_node_num}'
+            name = f'{self.__class__.__name__}_{Node.__global_node_num}'
         self.__name = name
-        self.__global_node_num += 1
+        Node.__global_node_num += 1
         self.__is_active = True
 
     @property
@@ -194,7 +194,7 @@ class Function:
 
     def __call__(self, *args, **kwargs) -> Variable:
         res = Variable(self.__func,
-                       f'{self.__func}(' + ','.join(map(str, args)) +
+                       f'{self.__func.__name__}(' + ','.join(map(str, args)) +
                        ','.join(map(lambda k: f'{k}={kwargs[k]}', kwargs)) + ')',
                        *[arg if isinstance(arg, Node) and arg.is_active else Constant(arg) for arg in args],
                        **{kw: arg if isinstance(arg, Node) and arg.is_active else Constant(arg)
