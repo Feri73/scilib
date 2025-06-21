@@ -1,6 +1,7 @@
 from functools import partial
 from numbers import Number
 from typing import Union, List, Callable, Tuple
+from math import floor
 
 try:
     from typing import Literal
@@ -145,6 +146,7 @@ class SampledTimeView(ArrayView1D):
 
         self.__freq = freq
         self.__start_time = start_time
+        self.__times = None
 
     def _new(self, axis: int, freq: float, start_time: float, use_start_time: bool) -> 'SampledTimeView':
         return SampledTimeView(axis, freq, start_time if use_start_time else 0.)
@@ -163,8 +165,28 @@ class SampledTimeView(ArrayView1D):
 
     @property
     def times(self):
-        return np.arange(self.start_time,
-                         (self.start_time * self.freq + len(self)) / self.freq, 1 / self.freq)[:len(self)]
+        if self.__times is None:
+            self.__times = (self.start_time, self.freq, len(self),
+                            np.arange(self.start_time,
+                                      (self.start_time * self.freq + len(self)) / self.freq, 1 / self.freq)[:len(self)])
+        if self.__times[:-1] == (self.start_time, self.freq, len(self)):
+            return self.__times[-1]
+        self.__times = None
+        return self.times
+
+    def __linear_interpolation(self, indices: NPIndex, floor_res: NPValue = None, ceil_res: NPValue = None) -> NPValue:
+        floor_inds = np.floor(indices)
+        ceil_inds = np.floor(indices) + 1
+        if floor_res is None:
+            floor_res = super(SampledTimeView, self).__getitem__(floor_inds.astype(np.int32)).numpy
+        if ceil_res is None:
+            ceil_res = super(SampledTimeView, self).__getitem__(ceil_inds.astype(np.int32)).numpy
+        ceil_inds = np.reshape(ceil_inds, [1 if i != self.axis else -1 for i in range(len(self.numpy.shape))])
+        floor_inds = np.reshape(floor_inds, [1 if i != self.axis else -1 for i in range(len(self.numpy.shape))])
+        indices = np.reshape(indices, [1 if i != self.axis else -1 for i in range(len(self.numpy.shape))])
+        res = floor_res + (ceil_res - floor_res) / (ceil_inds - floor_inds) * (indices - floor_inds)
+        res[np.isnan(res)] = floor_res[np.isnan(res)]
+        return res
 
     @accessor
     @arrays.VERSION.check_assumption(sampeld_time_view_interpolation='linear')
@@ -173,37 +195,48 @@ class SampledTimeView(ArrayView1D):
             indices = self.freq * (times - self.start_time)
             if indices < 0:
                 raise ValueError()
+            indices = np.array([indices])
         elif isinstance(times, slice):
             if times.step is not None and times.step < 0:
                 raise ValueError()
             freq = self.freq if times.step is None else 1. / times.step
             step = 1. / self.freq if times.step is None else times.step
-            times = np.arange(self.start_time if times.start is None else times.start,
-                              self.times[-1] if times.stop is None else times.stop, step)
-            if times[0] in self.times and step % (1. / self.freq) == 0:
-                res = super(SampledTimeView, self).__getitem__(
-                    slice(round((times[0] - self.start_time) * self.freq),
-                          round((times[-1] - self.start_time) * self.freq) + 1, round(step * self.freq)))
+            start_time = self.start_time if times.start is None else times.start
+            end_time = self.times[-1] if times.stop is None else times.stop
+            if start_time < self.start_time:
+                raise ValueError()
+            if step % (1. / self.freq) == 0:
+                if (start_time - self.start_time) % (1. / self.freq) == 0:
+                    res = super(SampledTimeView, self).__getitem__(
+                        slice(round((start_time - self.start_time) * self.freq),
+                              round((end_time - self.start_time) * self.freq) + 1, round(step * self.freq)))
+                else:
+                    start_idx = (start_time - self.start_time) * self.freq
+                    end_idx = (end_time - self.start_time) * self.freq
+                    step_idx = round(step * self.freq)
+                    floor_res = super(SampledTimeView, self).__getitem__(
+                        slice(floor(start_idx), floor(end_idx) + 1, step_idx))
+                    ceil_res = super(SampledTimeView, self).__getitem__(
+                        slice(floor(start_idx) + 1, floor(end_idx) + 1 + 1, step_idx))
+                    min_len = min(len(floor_res), len(ceil_res))
+                    floor_res = super(SampledTimeView, floor_res).__getitem__(slice(min_len))
+                    floor_res = super(SampledTimeView, floor_res).__getitem__(slice(min_len))
+                    floor_res = floor_res.numpy
+                    ceil_res = ceil_res.numpy
+                    frac = start_idx - floor(start_idx)
+                    res = floor_res * (1 - frac) + ceil_res * frac
             else:
+                times = np.arange(start_time, end_time, step)
                 res = self[times]
-            return self._new(self.axis, freq, times[0], False)(res)
+            return self._new(self.axis, freq, start_time, False)(res)
         else:
             indices = (np.array(times) - self.start_time) * self.freq
             if np.any(indices < 0):
                 raise ValueError()
-        floor_inds = np.floor(indices)
-        ceil_inds = np.ceil(indices)
+        ceil_inds = np.floor(indices) + 1
         valid_ceil_inds_is = ceil_inds < len(self)
-        floor_inds = floor_inds[valid_ceil_inds_is]
-        ceil_inds = ceil_inds[valid_ceil_inds_is]
         indices = indices[valid_ceil_inds_is]
-        floor_res = super(SampledTimeView, self).__getitem__(floor_inds.astype(np.int32)).numpy
-        ceil_res = super(SampledTimeView, self).__getitem__(ceil_inds.astype(np.int32)).numpy
-        ceil_inds = np.reshape(ceil_inds, [1 if i != self.axis else -1 for i in range(len(self.numpy.shape))])
-        floor_inds = np.reshape(floor_inds, [1 if i != self.axis else -1 for i in range(len(self.numpy.shape))])
-        indices = np.reshape(indices, [1 if i != self.axis else -1 for i in range(len(self.numpy.shape))])
-        res = floor_res + (ceil_res - floor_res) / (ceil_inds - floor_inds) * (indices - floor_inds)
-        res[np.isnan(res)] = floor_res[np.isnan(res)]
+        res = self.__linear_interpolation(indices)
         return ArrayView1D(self.axis)(res)
 
     @arrays.VERSION.check_assumption(sampeld_time_view_inds='non-neg;+s_time')
@@ -237,14 +270,8 @@ class SampledTimeView(ArrayView1D):
         start_time = self.start_time if start_time is None else start_time
         duration = self.times[-1] - self.times[0] if duration is None else duration
         freq = self.freq if freq is None else freq
-        start_ind = int((start_time - self.start_time) * self.freq)
-        inds = []
-        while len(inds) < duration * freq:
-            if start_ind < 0:
-                raise ValueError()
-            inds.append(int(start_ind))
-            start_ind = start_ind + self.freq / freq
-        return self._new(self.axis, freq, start_time, set_start_time)(super(SampledTimeView, self).__getitem__(inds))
+        res = self[start_time:start_time + duration:1. / freq]
+        return self._new(self.axis, freq, start_time, set_start_time)(res)
 
     @accessor
     def start_at(self, start_time: float):
