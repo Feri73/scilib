@@ -52,3 +52,9 @@ def nanttest(a: NPValue, b: NPValue, axis: NPAxis, keepdims: bool = False, **kwa
     if keepdims:
         h = np.expand_dims(h, axis)
     return h
+
+def non_nan_count(data: NPValue, axis: NPAxis, keepdims: bool = False):
+    res = np.count_nonzero(~np.isnan(data), axis=axis)
+    if keepdims:
+        res = np.expand_dims(res, axis)
+    return res
