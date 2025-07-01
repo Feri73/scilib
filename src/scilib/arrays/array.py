@@ -186,7 +186,7 @@ class SampledTimeView(ArrayView1D):
         indices = np.reshape(indices, [1 if i != self.axis else -1 for i in range(len(self.numpy.shape))])
         res = floor_res + (ceil_res - floor_res) / (ceil_inds - floor_inds) * (indices - floor_inds)
         res[np.isnan(res)] = floor_res[np.isnan(res)]
-        return res
+        return res.astype(self.numpy.dtype)
 
     @accessor
     @arrays.VERSION.check_assumption(sampeld_time_view_interpolation='linear')
@@ -315,50 +315,54 @@ class EventTimeView(ArrayView1D):
                 'mean': get mean
                 'sum': get sum
         """
-        assert multi_events in ['raise', 'mean', 'sum']
+        assert multi_events in ('raise', 'mean', 'sum')
 
-        slcs = [slice(None)] * len(self.numpy.shape)
+        times = self.times
+        data = np.moveaxis(self.numpy, self.axis, -1)  # bring event axis to last
 
-        initial_no_data_count = 0
-        res = []
-        t = start_time
-        next_event_i = 0
-        end_time = self.times[-1] if end_time is None else end_time
-        n_steps = 0
-        while t <= end_time:
-            events = []
-            while next_event_i <= len(self.times) - 1 and self.times[next_event_i] <= t:
-                slcs[self.axis] = [next_event_i]
-                events.append(self.numpy[tuple(slcs)])
-                next_event_i += 1
-            if len(events) == 0:
-                if len(res) == 0:
-                    initial_no_data_count += 1
+        # determine sampling window
+        end_time = times[-1] if end_time is None else end_time
+        n_steps = int(np.floor((end_time - start_time) * freq)) + 1
+        sample_times = start_time + np.arange(n_steps) / freq
+
+        # for each sample time, how many events have occurred up to it
+        idxs = np.searchsorted(times, sample_times, side='right')
+
+        # preallocate output: shape = (n_steps, …original_dims_without_event…)
+        out_shape = (n_steps,) + data.shape[:-1]
+        out = np.empty(out_shape, dtype=data.dtype)
+
+        prev = 0
+        for i, curr in enumerate(idxs):
+            if curr == prev:
+                # no event in this bin
+                if i == 0:
+                    # before first event → zeros
+                    out[i] = 0 if default_value == 'last' else default_value
                 else:
-                    if default_value == 'last':
-                        res.append(res[-1])
-                    else:
-                        res.append(np.ones_like(res[0]) * default_value)
+                    # after at least one sample → repeat or constant
+                    out[i] = out[i - 1] if default_value == 'last' else default_value
             else:
-                if len(events) > 1:
+                # one or more events in this bin
+                block = data[..., prev:curr]
+                if block.shape[-1] > 1:
                     if multi_events == 'raise':
-                        raise ValueError('multiple events')
-                    elif multi_events == 'mean':
-                        events[0] = np.mean(events, axis=self.axis)
-                    elif multi_events == 'sum':
-                        events[0] = np.sum(events, axis=self.axis)
-                res.append(events[0])
-                if initial_no_data_count > 0:
-                    for _ in range(initial_no_data_count):
-                        if default_value == 'last':
-                            res.insert(0, np.zeros_like(res[-1]))
-                        else:
-                            res.insert(0, np.ones_like(res[-1]) * default_value)
-                    initial_no_data_count = 0
-            n_steps += 1
-            t = n_steps / freq
-        return SampledTimeView(self.axis, freq, start_time if set_start_time else 0.)(
-            np.swapaxes(res, 0, self.axis + 1)[0])
+                        raise ValueError('multiple events in one bin')
+                    block = block.mean(axis=-1) if multi_events == 'mean' else block.sum(axis=-1)
+                else:
+                    block = block[..., 0]
+                out[i] = block
+            prev = curr
+
+        # put the sample‐axis back where it belongs
+        out = np.moveaxis(out, 0, self.axis)
+
+        # wrap in SampledTimeView
+        return SampledTimeView(
+            self.axis,
+            freq,
+            start_time if set_start_time else 0.
+        )(out)
 
     @accessor
     def __getitem__(self, indices: NPIndex) -> 'EventTimeView':
