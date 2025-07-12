@@ -55,6 +55,7 @@ class Memoize:
         self.__write_cache = None
         self.__verbose = None
         self.__hash_func = None
+        self.__memoize_path_kw = None
 
     @staticmethod
     def func_summary(func: Callable) -> str:
@@ -82,7 +83,7 @@ class Memoize:
         return create_memoize
 
     def config(self, path: str, name: str, check_func_change=True, read_cache: bool = True, write_cache: bool = True,
-               pickle=None, verbose=True, hash_func: Callable = None) -> Callable:
+               pickle=None, verbose=True, hash_func: Callable = None, memoize_path_kw: str = None) -> Callable:
         self.__path = path
         self.__name = name
         if pickle is None:
@@ -92,6 +93,7 @@ class Memoize:
         self.__write_cache = write_cache
         self.__verbose = verbose
         self.__hash_func = (lambda x: None) if hash_func is None else hash_func
+        self.__memoize_path_kw = memoize_path_kw
 
         if self.__read_cache or self.__write_cache:
             if check_func_change:
@@ -136,7 +138,9 @@ class Memoize:
                     self.print(f'Match found for {args}, {kwargs} in #{i}.')
                     return load_pickle(self.__pickle, f'{self.__path}/{self.__name}/{i}.pckl')
             self.print(f'No match found for {args}, {kwargs}. Calculating the result')
-        res = self.__func(*args, **kwargs)
+        res = self.__func(*args, **kwargs,
+                          **({self.__memoize_path_kw: f'{self.__path}/{self.__name}/{len(self.__db.obj) - 1}'}
+                             if self.__memoize_path_kw is not None else {}))
         if self.__write_cache:
             print(f'Dumping the result in #{len(self.__db.obj) - 1}')
             dump_pickle(self.__pickle, f'{self.__path}/{self.__name}/{len(self.__db.obj) - 1}.pckl', res)
@@ -177,7 +181,7 @@ class ProgramCache:
             verbose = self.__verbose
         if verbose:
             return print(f'Program caching to {self.__path}: ', *args, **kwargs)
-        
+
     def add_flush_with(self, flushable) -> None:
         self.__flush_with.append(flushable)
 

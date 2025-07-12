@@ -150,3 +150,9 @@ class NumpyMemmap:
             res.__opened_file[inds] = self.__opened_file
         res.flush()
         return res
+
+
+class SerializableMemmap(np.memmap):
+    def __reduce__(self):
+        self.flush()
+        return SerializableMemmap, (self.filename, self.dtype, self.mode, self.offset, self.shape)

@@ -157,3 +157,20 @@ class Version:
             return wrapper
 
         return decorator
+
+
+class monkey_patch:
+    def __init__(self, module: ModuleType, original, replaced):
+        self.module = module
+        self.original = original
+        self.replaced = replaced
+
+    def __enter__(self):
+        setattr(self.module, self.original.__name__, self.replaced)
+        setattr(self.module, f'{self.original.__name__}___old', self.original)
+        return self
+
+    def __exit__(self, exc_type, exc_value, traceback):
+        setattr(self.module, self.original.__name__, self.original)
+        delattr(self.module, f'{self.original.__name__}___old')
+        return False

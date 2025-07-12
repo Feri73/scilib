@@ -1,5 +1,6 @@
 from functools import partial
 from numbers import Number
+from types import ModuleType
 from typing import Union, List, Callable, Tuple
 from math import floor
 
@@ -7,7 +8,7 @@ try:
     from typing import Literal
 except ImportError:
     from typing_extensions import Literal
-from .utils import np, npt, NPValue, NPIndex
+from .utils import numpy_lib, npt, NPValue, NPIndex
 from .. import arrays
 
 Axes = List[int]
@@ -18,6 +19,15 @@ ACCESSOR_STR = 'accessor'
 def accessor(func: Callable) -> Callable:
     setattr(func, ACCESSOR_STR, True)
     return func
+
+
+def _compute(x: Union[NPValue, Tuple[NPValue]], *, np: ModuleType) -> Union[NPValue, Tuple[NPValue]]:
+    if hasattr(np, 'compute'):
+        res = np.compute(x)
+        if isinstance(res, tuple) and len(res) == 1:
+            return res[0]
+        return res
+    return x
 
 
 class ArrayViewMeta(type):
@@ -35,16 +45,23 @@ class ArrayViewMeta(type):
 class ArrayView(metaclass=ArrayViewMeta):
     accessors = []
 
-    def __init__(self, axes: Axes):
+    def __init__(self, axes: Axes, *, np: ModuleType):
         self.__numpy = None
         self.__axes = axes
+        self.__np = np
 
     @staticmethod
-    def _to_ndarray(array: NPValue) -> npt.NDArray:
-        return array if isinstance(array, np.ndarray) else np.array(array)
+    def _to_ndarray(array: NPValue, *, np: ModuleType) -> npt.NDArray:
+        if np == numpy_lib and isinstance(array, np.memmap):
+            return array
+        return np.asarray(array)  # if isinstance(array, np.ndarray) else np.array(array)
 
-    def copy(self, axes: Axes = None) -> 'ArrayView':
-        return ArrayView(self.axes if axes is None else axes.copy())
+    def copy(self, axes: Axes = None, *, np: ModuleType = None) -> 'ArrayView':
+        return ArrayView(self.axes if axes is None else axes.copy(), np=self.np if np is None else np)
+
+    @property
+    def np(self) -> ModuleType:
+        return self.__np
 
     @property
     def numpy(self) -> npt.NDArray:
@@ -56,7 +73,7 @@ class ArrayView(metaclass=ArrayViewMeta):
 
     def __call__(self, numpy: Union[NPValue, 'ArrayView'], axes: Axes = None):
         view = self.copy(axes)
-        view.__numpy = numpy.numpy if isinstance(numpy, ArrayView) else self._to_ndarray(numpy)
+        view.__numpy = numpy.numpy if isinstance(numpy, ArrayView) else self._to_ndarray(numpy, np=self.np)
         return view
 
     @accessor
@@ -93,16 +110,16 @@ class ArrayView(metaclass=ArrayViewMeta):
 
     @property
     def shape(self) -> Tuple[int, ...]:
-        return tuple(np.array(self.numpy.shape)[self.axes])
+        return tuple(numpy_lib.array(self.numpy.shape)[self.axes])
 
 
 class ArrayView1D(ArrayView):
-    def __init__(self, axis: int):
-        super().__init__([axis])
+    def __init__(self, axis: int, *, np: ModuleType = numpy_lib):
+        super().__init__([axis], np=np)
 
-    def copy(self, axes: Union[Axes, int] = None) -> 'ArrayView1D':
+    def copy(self, axes: Union[Axes, int] = None, *, np: ModuleType = None) -> 'ArrayView1D':
         axes = self._correct_axes(axes)
-        return ArrayView1D((self.axes if axes is None else axes.copy())[0])
+        return ArrayView1D((self.axes if axes is None else axes.copy())[0], np=self.np if np is None else np)
 
     def __call__(self, numpy: Union[NPValue, 'ArrayView'], axes: Union[Axes, int] = None):
         axes = self._correct_axes(axes)
@@ -121,13 +138,13 @@ class ArrayView1D(ArrayView):
 
     @accessor
     def appended(self, value: NPValue) -> 'ArrayView1D':
-        value = self._to_ndarray(value)
+        value = self._to_ndarray(value, np=self.np)
         if (self.numpy.shape[:self.axis] + self.numpy.shape[self.axis + 1:]) == value.shape:
-            value = np.expand_dims(value, self.axis)
+            value = self.np.expand_dims(value, self.axis)
         else:
             assert self.numpy.shape[:self.axis] == value.shape[:self.axis]
             assert self.numpy.shape[self.axis + 1:] == value.shape[self.axis + 1:]
-        return self(np.append(self.numpy, value, axis=self.axis))
+        return self(self.np.append(self.numpy, value, axis=self.axis))
 
     @accessor
     def apply(self, func: Callable, **kwargs):
@@ -141,19 +158,20 @@ class ArrayView1D(ArrayView):
 
 
 class SampledTimeView(ArrayView1D):
-    def __init__(self, axis: int, freq: float, start_time: float = 0.):
-        super().__init__(axis)
+    def __init__(self, axis: int, freq: float, start_time: float = 0., *, np: ModuleType = numpy_lib):
+        super().__init__(axis, np=np)
 
         self.__freq = freq
         self.__start_time = start_time
         self.__times = None
 
-    def _new(self, axis: int, freq: float, start_time: float, use_start_time: bool) -> 'SampledTimeView':
-        return SampledTimeView(axis, freq, start_time if use_start_time else 0.)
+    def _new(self, axis: int, freq: float, start_time: float, use_start_time: bool,
+             *, np: ModuleType = None) -> 'SampledTimeView':
+        return SampledTimeView(axis, freq, start_time if use_start_time else 0., np=self.np if np is None else np)
 
-    def copy(self, axes: Union[int, Axes] = None) -> 'SampledTimeView':
+    def copy(self, axes: Union[int, Axes] = None, *, np: ModuleType = None) -> 'SampledTimeView':
         axes = self._correct_axes(axes)
-        return self._new((self.axes if axes is None else axes.copy())[0], self.freq, self.start_time, True)
+        return self._new((self.axes if axes is None else axes.copy())[0], self.freq, self.start_time, True, np=np)
 
     @property
     def freq(self) -> float:
@@ -167,25 +185,28 @@ class SampledTimeView(ArrayView1D):
     def times(self):
         if self.__times is None:
             self.__times = (self.start_time, self.freq, len(self),
-                            np.arange(self.start_time,
-                                      (self.start_time * self.freq + len(self)) / self.freq, 1 / self.freq)[:len(self)])
+                            self.np.arange(self.start_time,
+                                           (self.start_time * self.freq + len(self)) / self.freq,
+                                           1 / self.freq)[:len(self)])
         if self.__times[:-1] == (self.start_time, self.freq, len(self)):
             return self.__times[-1]
         self.__times = None
         return self.times
 
     def __linear_interpolation(self, indices: NPIndex, floor_res: NPValue = None, ceil_res: NPValue = None) -> NPValue:
-        floor_inds = np.floor(indices)
-        ceil_inds = np.floor(indices) + 1
+        indices = _compute(indices, np=self.np)
+        floor_inds = self._to_ndarray(self.np.floor(indices), np=self.np)
+        ceil_inds = floor_inds + 1
         if floor_res is None:
-            floor_res = super(SampledTimeView, self).__getitem__(floor_inds.astype(np.int32)).numpy
+            floor_res = super(SampledTimeView, self).__getitem__(floor_inds.astype(self.np.int32)).numpy
         if ceil_res is None:
-            ceil_res = super(SampledTimeView, self).__getitem__(ceil_inds.astype(np.int32)).numpy
-        ceil_inds = np.reshape(ceil_inds, [1 if i != self.axis else -1 for i in range(len(self.numpy.shape))])
-        floor_inds = np.reshape(floor_inds, [1 if i != self.axis else -1 for i in range(len(self.numpy.shape))])
-        indices = np.reshape(indices, [1 if i != self.axis else -1 for i in range(len(self.numpy.shape))])
+            ceil_res = super(SampledTimeView, self).__getitem__(ceil_inds.astype(self.np.int32)).numpy
+        ceil_inds = self.np.reshape(ceil_inds, [1 if i != self.axis else -1 for i in range(len(self.numpy.shape))])
+        floor_inds = self.np.reshape(floor_inds, [1 if i != self.axis else -1 for i in range(len(self.numpy.shape))])
+        indices = self.np.reshape(self._to_ndarray(indices, np=self.np),
+                                  [1 if i != self.axis else -1 for i in range(len(self.numpy.shape))])
         res = floor_res + (ceil_res - floor_res) / (ceil_inds - floor_inds) * (indices - floor_inds)
-        res[np.isnan(res)] = floor_res[np.isnan(res)]
+        res = self.np.where(self.np.isnan(res), floor_res, res)
         return res.astype(self.numpy.dtype)
 
     @accessor
@@ -195,14 +216,14 @@ class SampledTimeView(ArrayView1D):
             indices = self.freq * (times - self.start_time)
             if indices < 0:
                 raise ValueError()
-            indices = np.array([indices])
+            indices = self.np.array([indices])
         elif isinstance(times, slice):
             if times.step is not None and times.step < 0:
                 raise ValueError()
             freq = self.freq if times.step is None else 1. / times.step
             step = 1. / self.freq if times.step is None else times.step
             start_time = self.start_time if times.start is None else times.start
-            end_time = self.times[-1] if times.stop is None else times.stop
+            end_time = float(_compute(self.times[-1], np=self.np)) if times.stop is None else times.stop
             if start_time < self.start_time:
                 raise ValueError()
             if step % (1. / self.freq) == 0:
@@ -220,24 +241,23 @@ class SampledTimeView(ArrayView1D):
                         slice(floor(start_idx) + 1, floor(end_idx) + 1 + 1, step_idx))
                     min_len = min(len(floor_res), len(ceil_res))
                     floor_res = super(SampledTimeView, floor_res).__getitem__(slice(min_len))
-                    floor_res = super(SampledTimeView, floor_res).__getitem__(slice(min_len))
                     floor_res = floor_res.numpy
                     ceil_res = ceil_res.numpy
                     frac = start_idx - floor(start_idx)
-                    res = floor_res * (1 - frac) + ceil_res * frac
+                    res = (floor_res * (1 - frac) + ceil_res * frac).astype(self.numpy.dtype)
             else:
-                times = np.arange(start_time, end_time, step)
+                times = self.np.arange(start_time, end_time, step)
                 res = self[times]
             return self._new(self.axis, freq, start_time, False)(res)
         else:
-            indices = (np.array(times) - self.start_time) * self.freq
-            if np.any(indices < 0):
+            indices = (self.np.array(times) - self.start_time) * self.freq
+            if bool(_compute(self.np.any(indices < 0), np=self.np)):
                 raise ValueError()
-        ceil_inds = np.floor(indices) + 1
-        valid_ceil_inds_is = ceil_inds < len(self)
+        ceil_inds = self.np.floor(indices) + 1
+        valid_ceil_inds_is = self.np.asarray(ceil_inds < len(self))
         indices = indices[valid_ceil_inds_is]
         res = self.__linear_interpolation(indices)
-        return ArrayView1D(self.axis)(res)
+        return ArrayView1D(self.axis, np=self.np)(res)
 
     @arrays.VERSION.check_assumption(sampeld_time_view_inds='non-neg;+s_time')
     def __setitem__(self, times: NPIndex, value: NPValue) -> None:
@@ -278,21 +298,22 @@ class SampledTimeView(ArrayView1D):
         return self._new(self.axis, self.freq, start_time, True)(self.numpy)
 
     def conv_weight(self, duration: float, per_sample: bool = True) -> NPValue:
-        return 1 / (duration * (self.freq if per_sample else 1)) * np.ones(int(duration * self.freq))
+        return 1 / (duration * (self.freq if per_sample else 1)) * self.np.ones(int(duration * self.freq))
 
 
 class EventTimeView(ArrayView1D):
-    def __init__(self, axis: int, times: NPIndex):
-        super().__init__(axis)
-        self.__times = self._to_ndarray(times)
+    def __init__(self, axis: int, times: NPIndex, *, np: ModuleType = numpy_lib):
+        super().__init__(axis, np=np)
+        self.__times = self._to_ndarray(times, np=self.np)
 
     @property
     def times(self):
         return self.__times
 
-    def copy(self, axes: Union[int, Axes] = None) -> 'EventTimeView':
+    def copy(self, axes: Union[int, Axes] = None, *, np: ModuleType = None) -> 'EventTimeView':
         axes = self._correct_axes(axes)
-        return EventTimeView((self.axes if axes is None else axes.copy())[0], self.times)
+        return EventTimeView((self.axes if axes is None else axes.copy())[0], self.times,
+                             np=self.np if np is None else np)
 
     def __call__(self, numpy: Union[NPValue, 'ArrayView'], axes: Union[Axes, int] = None):
         axes = self._correct_axes(axes)
@@ -300,7 +321,7 @@ class EventTimeView(ArrayView1D):
         if isinstance(numpy, ArrayView):
             assert len(axes) == 1 and numpy.shape[axes[0]] == len(self.times)
         else:
-            numpy = self._to_ndarray(numpy)
+            numpy = self._to_ndarray(numpy, np=self.np)
             assert len(axes) == 1 and numpy.shape[axes[0]] == len(self.times)
         return super(EventTimeView, self).__call__(numpy, axes)
 
@@ -317,51 +338,28 @@ class EventTimeView(ArrayView1D):
         """
         assert multi_events in ('raise', 'mean', 'sum')
 
+        if multi_events != 'sum' or default_value != 0.:
+            raise NotImplementedError()
+
         times = self.times
-        data = np.moveaxis(self.numpy, self.axis, -1)  # bring event axis to last
+        data = self.np.moveaxis(self.numpy, self.axis, -1)  # bring event axis to last
 
-        # determine sampling window
         end_time = times[-1] if end_time is None else end_time
-        n_steps = int(np.floor((end_time - start_time) * freq)) + 1
-        sample_times = start_time + np.arange(n_steps) / freq
+        n_steps = int(_compute(self.np.floor((end_time - start_time) * freq) + 1, np=self.np))
+        sample_times = start_time + self.np.arange(n_steps) / freq
 
-        # for each sample time, how many events have occurred up to it
-        idxs = np.searchsorted(times, sample_times, side='right')
+        bin_idx = self.np.searchsorted(sample_times, times, side='left')
+        flat_data = self.np.reshape(data, (-1, data.shape[-1]))
+        out = self.np.stack([self.np.bincount(bin_idx, flat_data[i], minlength=n_steps).astype(self.numpy.dtype)
+                             for i in range(len(flat_data))])
+        out = self.np.reshape(out, (*data.shape[:-1], n_steps))
+        out = self.np.moveaxis(out, -1, self.axis)
 
-        # preallocate output: shape = (n_steps, …original_dims_without_event…)
-        out_shape = (n_steps,) + data.shape[:-1]
-        out = np.empty(out_shape, dtype=data.dtype)
-
-        prev = 0
-        for i, curr in enumerate(idxs):
-            if curr == prev:
-                # no event in this bin
-                if i == 0:
-                    # before first event → zeros
-                    out[i] = 0 if default_value == 'last' else default_value
-                else:
-                    # after at least one sample → repeat or constant
-                    out[i] = out[i - 1] if default_value == 'last' else default_value
-            else:
-                # one or more events in this bin
-                block = data[..., prev:curr]
-                if block.shape[-1] > 1:
-                    if multi_events == 'raise':
-                        raise ValueError('multiple events in one bin')
-                    block = block.mean(axis=-1) if multi_events == 'mean' else block.sum(axis=-1)
-                else:
-                    block = block[..., 0]
-                out[i] = block
-            prev = curr
-
-        # put the sample‐axis back where it belongs
-        out = np.moveaxis(out, 0, self.axis)
-
-        # wrap in SampledTimeView
         return SampledTimeView(
             self.axis,
             freq,
-            start_time if set_start_time else 0.
+            start_time if set_start_time else 0.,
+            np=self.np
         )(out)
 
     @accessor
@@ -374,12 +372,12 @@ class EventTimeView(ArrayView1D):
             slcs[self.axis] = None
             data = data[tuple(slcs)]
             times = [times]
-        return EventTimeView(self.axis, times)(data)
+        return EventTimeView(self.axis, times, np=self.np)(data)
 
 
 class KeyView(ArrayView1D):
-    def __init__(self, axis: int, *keys: str):
-        super().__init__(axis)
+    def __init__(self, axis: int, *keys: str, np: ModuleType = numpy_lib):
+        super().__init__(axis, np=np)
 
         assert sorted(keys) == sorted(set(keys))
 
@@ -392,7 +390,7 @@ class KeyView(ArrayView1D):
         if isinstance(numpy, ArrayView):
             assert len(axes) == 1 and numpy.numpy.shape[axes[0]] == len(self.keys)
         else:
-            numpy = self._to_ndarray(numpy)
+            numpy = self._to_ndarray(numpy, np=self.np)
             assert len(axes) == 1 and numpy.shape[axes[0]] == len(self.keys)
         return super(KeyView, self).__call__(numpy, axes)
 
@@ -410,9 +408,9 @@ class KeyView(ArrayView1D):
             stop = None
         return slice(start, stop, step)
 
-    def copy(self, axes: Union[int, Axes] = None) -> 'KeyView':
+    def copy(self, axes: Union[int, Axes] = None, *, np: ModuleType = None) -> 'KeyView':
         axes = self._correct_axes(axes)
-        return KeyView((self.axes if axes is None else axes.copy())[0], *self.__keys)
+        return KeyView((self.axes if axes is None else axes.copy())[0], *self.__keys, np=self.np if np is None else np)
 
     @property
     def keys(self):
@@ -470,10 +468,10 @@ class KeyView(ArrayView1D):
 
     @accessor
     def appended(self, value: NPValue, *keys: str) -> 'KeyView':
-        value = self._to_ndarray(value)
+        value = self._to_ndarray(value, np=self.np)
         assert all([key not in self.__keys for key in keys])
         if (self.numpy.shape[:self.axis] + self.numpy.shape[self.axis + 1:]) == value.shape:
-            value = np.expand_dims(value, self.axis)
+            value = self.np.expand_dims(value, self.axis)
         else:
             assert self.numpy.shape[:self.axis] == value.shape[:self.axis]
             assert self.numpy.shape[self.axis + 1:] == value.shape[self.axis + 1:]
@@ -548,31 +546,44 @@ class Array(metaclass=ArrayMeta):
 
         def __setattr__(self, name, value):
             if name == 'value':
-                inds_array = self.__array(np.arange(self.__array.numpy.size).reshape(self.__array.shape))
+                inds_array = self.__array(self.__array.np.arange(self.__array.numpy.size).reshape(self.__array.shape))
                 for view_name, ind in self.__indices.items():
                     inds_array = getattr(inds_array, view_name)[ind]
-                self.__array.numpy[np.unravel_index(inds_array.numpy.flat[:], self.__array.numpy.shape)] = \
-                    ArrayView._to_ndarray(value).flat[:]
+                self.__array.numpy[self.__array.np.unravel_index(inds_array.numpy.flat[:],
+                                                                 self.__array.numpy.shape)] = \
+                    ArrayView._to_ndarray(value, np=self.__array.np).flat[:]
             super(Array.ValueSetter, self).__setattr__(name, value)
 
     def __init__(self, **views: ArrayView):
+        self.__np = None
         axes = []
         self.views = views
         for view_name, view in views.items():
+            if self.__np is None:
+                self.__np = view.np
+            else:
+                assert self.__np == view.np
             for axis in axes:
                 assert axis not in view.axes
             axes += view.axes
             setattr(self, view_name, Array.View(view_name, self))
 
     def __call__(self, numpy: NPValue) -> 'Array':
-        numpy = ArrayView._to_ndarray(numpy)
+        numpy = ArrayView._to_ndarray(numpy, np=self.np)
         return Array(**{view_name: view(numpy) for view_name, view in self.views.items()})
+
+    def copy(self, *, np: ModuleType = None) -> 'Array':
+        return Array(**{view_name: view.copy(np=np) for view_name, view in self.views.items()})
 
     def __bool__(self):
         return self.numpy.__bool__()
 
     def setter(self, **indices: NPIndex) -> ValueSetter:
         return self.ValueSetter(self, **indices)
+
+    @property
+    def np(self) -> ModuleType:
+        return numpy_lib if self.__np is None else self.__np
 
     @property
     def numpy(self) -> npt.NDArray:
@@ -583,13 +594,13 @@ class Array(metaclass=ArrayMeta):
         return numpy
 
     def o_numpy(self, *views: str) -> npt.NDArray:
-        return np.transpose(self.numpy, sum((self.views[view_name].axes for view_name in views), []))
+        return self.np.transpose(self.numpy, sum((self.views[view_name].axes for view_name in views), []))
 
     def reduce(self, func: Callable, *views: str, keepdims=False, **kwargs) -> 'Array':
         axes = []
         for view_name in views:
             axes += self.views[view_name].axes
-        res = Array(**{view_name: ArrayView(view.axes) for view_name, view in self.views.items()})(
+        res = Array(**{view_name: ArrayView(view.axes, np=self.np) for view_name, view in self.views.items()})(
             func(self.numpy, axis=tuple(axes), keepdims=True, **kwargs))
         if not keepdims:
             res = res.squeeze(*views)
@@ -597,7 +608,7 @@ class Array(metaclass=ArrayMeta):
         for view_name, view in res.views.items():
             if view_name in self.views:
                 if view_name in views:
-                    res.views[view_name] = ArrayView(view.axes)
+                    res.views[view_name] = ArrayView(view.axes, np=self.np)
                 else:
                     res.views[view_name] = self.views[view_name].copy(view.axes)
         return res(numpy)
@@ -609,14 +620,15 @@ class Array(metaclass=ArrayMeta):
         assert not all_ones or len(views) == 0
 
         if all_ones:
-            views = [view_name for view_name, view in self.views.items() if np.array(self.views[view_name].shape) == 1]
+            views = [view_name for view_name, view in self.views.items()
+                     if numpy_lib.array(self.views[view_name].shape) == 1]
 
         axes = []
         for view_name in views:
-            if np.any(np.array(self.views[view_name].shape) != 1):
+            if numpy_lib.any(numpy_lib.array(self.views[view_name].shape) != 1):
                 raise ValueError()
             axes += self.views[view_name].axes
-        numpy = np.squeeze(self.numpy, tuple(axes))
+        numpy = self.np.squeeze(self.numpy, tuple(axes))
         views = {n: v(numpy, [a - len([aa for aa in axes if aa < a]) for a in v.axes])
                  for n, v in self.views.items() if n not in views}
         return Array(**views)
@@ -625,7 +637,7 @@ class Array(metaclass=ArrayMeta):
         new_axes = []
         for view_name, view in views.items():
             new_axes += view.axes
-        numpy = np.expand_dims(self.numpy, new_axes)
+        numpy = self.np.expand_dims(self.numpy, new_axes)
         for view_name, view in views.items():
             views[view_name] = view(numpy)
         for view_name, view in self.views.items():
@@ -651,17 +663,17 @@ class Array(metaclass=ArrayMeta):
                 raise TypeError()
         else:
             if len(views) == 0 and view_name is None:
-                view = ArrayView1D(self.ndim)
+                view = ArrayView1D(self.ndim, np=self.np)
                 view_name = '__tmp__'
             elif len(views) == 0 and view_name is not None:
-                view = ArrayView1D(self.ndim)
+                view = ArrayView1D(self.ndim, np=self.np)
             else:
                 view_name, view = list(views.items())[0]
-            arrays = tuple(array.expand(**{view_name: ArrayView1D(view.axis)}) for array in arrays)
+            arrays = tuple(array.expand(**{view_name: ArrayView1D(view.axis, np=self.np)}) for array in arrays)
             if view_name == '__tmp__':
                 for array in arrays:
                     delattr(array, view_name)
             self = arrays[0]
             self.views[view_name] = view
 
-        return self(np.concatenate(tuple(x.numpy for x in arrays), axis=view.axis))
+        return self(self.np.concatenate(tuple(x.numpy for x in arrays), axis=view.axis))
