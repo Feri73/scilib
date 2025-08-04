@@ -1,7 +1,7 @@
 from functools import partial
 from numbers import Number
 from types import ModuleType
-from typing import Union, List, Callable, Tuple
+from typing import Union, List, Callable, Tuple, Dict
 from math import floor
 
 try:
@@ -557,23 +557,33 @@ class Array(metaclass=ArrayMeta):
     def __init__(self, **views: ArrayView):
         self.__np = None
         axes = []
-        self.views = views
+        self.__views = views
         for view_name, view in views.items():
             if self.__np is None:
                 self.__np = view.np
             else:
-                assert self.__np == view.np
+                assert self.__np is view.np
             for axis in axes:
                 assert axis not in view.axes
             axes += view.axes
             setattr(self, view_name, Array.View(view_name, self))
 
+    @property
+    def views(self) -> Dict[str, ArrayView]:
+        return self.__views.copy()
+
     def __call__(self, numpy: NPValue) -> 'Array':
         numpy = ArrayView._to_ndarray(numpy, np=self.np)
         return Array(**{view_name: view(numpy) for view_name, view in self.views.items()})
 
-    def copy(self, *, np: ModuleType = None) -> 'Array':
-        return Array(**{view_name: view.copy(np=np) for view_name, view in self.views.items()})
+    def copy(self, *, np: ModuleType = None, **views: ArrayView) -> 'Array':
+        kept_views = views.copy()
+        for view_name, view in self.views.items():
+            if view_name in kept_views:
+                assert view.axes == kept_views[view_name].axes
+            elif view.axes not in [v.axes for v in kept_views.values()]:
+                kept_views[view_name] = view
+        return Array(**{view_name: view.copy(np=np) for view_name, view in kept_views.items()})
 
     def __bool__(self):
         return self.numpy.__bool__()
@@ -608,9 +618,9 @@ class Array(metaclass=ArrayMeta):
         for view_name, view in res.views.items():
             if view_name in self.views:
                 if view_name in views:
-                    res.views[view_name] = ArrayView(view.axes, np=self.np)
+                    res.__views[view_name] = ArrayView(view.axes, np=self.np)
                 else:
-                    res.views[view_name] = self.views[view_name].copy(view.axes)
+                    res.__views[view_name] = self.views[view_name].copy(view.axes)
         return res(numpy)
 
     def squeeze(self, *views: str, all_ones: bool = False) -> 'Array':
@@ -674,6 +684,6 @@ class Array(metaclass=ArrayMeta):
                 for array in arrays:
                     delattr(array, view_name)
             self = arrays[0]
-            self.views[view_name] = view
+            self.__views[view_name] = view
 
         return self(self.np.concatenate(tuple(x.numpy for x in arrays), axis=view.axis))
