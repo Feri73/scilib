@@ -103,7 +103,8 @@ def from_any_array(array: np.ndarray, chunks: tuple[int, ...]) -> da.Array:
                               shape=array.shape,
                               dtype=array.dtype,
                               mode='r',
-                              chunks=chunks)
+                              chunks=chunks,
+                              memmap_class=array.__class__)
     else:
         return da.from_delayed_array(array).rechunk(chunks)
 

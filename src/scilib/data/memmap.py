@@ -153,6 +153,20 @@ class NumpyMemmap:
 
 
 class SerializableMemmap(np.memmap):
+    def __new__(cls, filename, dtype=None, mode='r+', offset=0, shape=None, order='C'):
+        obj = np.memmap.__new__(cls, filename, dtype=dtype, mode=mode, offset=offset, shape=shape, order=order)
+        obj._sp_filename = filename
+        obj._sp_mode = mode
+        obj._sp_offset = offset
+        return obj
+
+    def __array_finalize__(self, obj):
+        if obj is None:
+            return
+        self._sp_filename = getattr(obj, '_sp_filename', None)
+        self._sp_mode = getattr(obj, '_sp_mode', 'r+')
+        self._sp_offset = getattr(obj, '_sp_offset', 0)
+
     def __reduce__(self):
         self.flush()
-        return SerializableMemmap, (self.filename, self.dtype, self.mode, self.offset, self.shape)
+        return self.__class__, (self._sp_filename, self.dtype, self._sp_mode, int(self._sp_offset), self.shape)
