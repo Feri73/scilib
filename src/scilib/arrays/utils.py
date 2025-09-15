@@ -60,7 +60,7 @@ def nanttest(a: NPValue, b: NPValue, axis: NPAxis, keepdims: bool = False, *,
 
 def nan_welch_test(a: NPValue, b_mean: NPValue, b_std: NPValue, b_count: NPValue, axis: NPAxis,
                    keepdims: bool = False, *,
-                   np=numpy_lib, scipy_stats=scipy_stats_lib, **kwargs) -> npt.NDArray:
+                   np=numpy_lib, scipy_stats=scipy_stats_lib) -> npt.NDArray:
     a = combine_axes(a, axis, np=np)
     a_mean = np.nanmean(a, axis=0)
     a_std = np.nanstd(a, axis=0)
@@ -69,7 +69,7 @@ def nan_welch_test(a: NPValue, b_mean: NPValue, b_std: NPValue, b_count: NPValue
     df_num = (a_std ** 2 / a_count + b_std ** 2 / b_count) ** 2
     df_den = ((a_std ** 2 / a_count) ** 2 / (a_count - 1)) + ((b_std ** 2 / b_count) ** 2 / (b_count - 1))
     df = df_num / df_den
-    p_value = 2 * (1 - scipy_stats_lib.t.cdf(np.abs(t_stat), df))
+    p_value = 2 * (1 - scipy_stats.t.cdf(np.abs(t_stat), df))
     if keepdims:
         p_value = np.expand_dims(p_value, axis)
     return p_value
