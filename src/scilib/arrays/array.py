@@ -654,6 +654,18 @@ class Array(metaclass=ArrayMeta):
             views[view_name] = view(numpy, [a + len([aa for aa in new_axes if aa <= a]) for a in view.axes])
         return Array(**views)
 
+    def transpose(self, *views_name: str) -> 'Array':
+        assert set(views_name) == set(self.views.keys()) and len(views_name) == len(self.views)
+        axes = []
+        new_view_axes = {}
+        for view_name in views_name:
+            new_view_axes[view_name] = [len(axes) + i for i in range(len(self.views[view_name].axes))]
+            axes += self.views[view_name].axes
+        numpy = self.np.transpose(self.numpy, axes)
+        views = {n: v(numpy, new_view_axes[n]) for n, v in self.views.items()}
+        return Array(**views)
+
+
     @property
     def shape(self) -> Tuple[int, ...]:
         return self.numpy.shape

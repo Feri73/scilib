@@ -28,6 +28,12 @@ class t:
         args = map(cp.asnumpy, args)
         return cp.asarray(scipy.stats.t.ppf(q, *args, **kwargs))
 
+    @staticmethod
+    def cdf(x, *args, **kwargs):
+        x = cp.asnumpy(x)
+        args = map(cp.asnumpy, args)
+        return cp.asarray(scipy.stats.t.cdf(x, *args, **kwargs))
+
 
 cstats.t = t
 
