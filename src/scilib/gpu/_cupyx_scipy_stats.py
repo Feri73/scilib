@@ -35,6 +35,28 @@ class t:
         return cp.asarray(scipy.stats.t.cdf(x, *args, **kwargs))
 
 
+class chi2:
+    @staticmethod
+    def ppf(q, *args, **kwargs):
+        q = cp.asnumpy(q)
+        args = map(cp.asnumpy, args)
+        return cp.asarray(scipy.stats.chi2.ppf(q, *args, **kwargs))
+
+
+class binom:
+    @staticmethod
+    def sf(*args, **kwargs):
+        args = map(cp.asnumpy, args)
+        return cp.asarray(scipy.stats.binom.sf(*args, **kwargs))
+
+    @staticmethod
+    def cdf(*args, **kwargs):
+        args = map(cp.asnumpy, args)
+        return cp.asarray(scipy.stats.binom.cdf(*args, **kwargs))
+
+
 cstats.t = t
+cstats.chi2 = chi2
+cstats.binom = binom
 
 sys.modules[__name__] = cstats

@@ -606,22 +606,29 @@ class Array(metaclass=ArrayMeta):
     def o_numpy(self, *views: str) -> npt.NDArray:
         return self.np.transpose(self.numpy, sum((self.views[view_name].axes for view_name in views), []))
 
-    def reduce(self, func: Callable, *views: str, keepdims=False, **kwargs) -> 'Array':
+    def reduce(self, func: Callable, *views: str, keepdims=False, **kwargs) -> Union['Array', Tuple['Array']]:
         axes = []
         for view_name in views:
             axes += self.views[view_name].axes
-        res = Array(**{view_name: ArrayView(view.axes, np=self.np) for view_name, view in self.views.items()})(
-            func(self.numpy, axis=tuple(axes), keepdims=True, **kwargs))
-        if not keepdims:
-            res = res.squeeze(*views)
-        numpy = res.numpy
-        for view_name, view in res.views.items():
-            if view_name in self.views:
-                if view_name in views:
-                    res.__views[view_name] = ArrayView(view.axes, np=self.np)
-                else:
-                    res.__views[view_name] = self.views[view_name].copy(view.axes)
-        return res(numpy)
+        func_res = func(self.numpy, axis=tuple(axes), keepdims=True, **kwargs)
+        if not isinstance(func_res, tuple):
+            func_res = (func_res,)
+        reses = []
+        for fr in func_res:
+            res = Array(**{view_name: ArrayView(view.axes, np=self.np) for view_name, view in self.views.items()})(fr)
+            if not keepdims:
+                res = res.squeeze(*views)
+            numpy = res.numpy
+            for view_name, view in res.views.items():
+                if view_name in self.views:
+                    if view_name in views:
+                        res.__views[view_name] = ArrayView(view.axes, np=self.np)
+                    else:
+                        res.__views[view_name] = self.views[view_name].copy(view.axes)
+            reses.append(res(numpy))
+        if len(reses) == 1:
+            return reses[0]
+        return tuple(reses)
 
     def squeeze(self, *views: str, all_ones: bool = False) -> 'Array':
         if len(views) == 1 and views[0] is True:
@@ -647,7 +654,7 @@ class Array(metaclass=ArrayMeta):
         new_axes = []
         for view_name, view in views.items():
             new_axes += view.axes
-        numpy = self.np.expand_dims(self.numpy, new_axes)
+        numpy = self.np.expand_dims(self.numpy, tuple(new_axes))
         for view_name, view in views.items():
             views[view_name] = view(numpy)
         for view_name, view in self.views.items():
@@ -665,6 +672,16 @@ class Array(metaclass=ArrayMeta):
         views = {n: v(numpy, new_view_axes[n]) for n, v in self.views.items()}
         return Array(**views)
 
+    @staticmethod
+    def where(bool_ind: 'Array', val_true: Union[NPValue, 'Array'], val_false: Union[NPValue, 'Array']) -> 'Array':
+        val_true = val_true.numpy if isinstance(val_true, Array) else val_true
+        val_false = val_false.numpy if isinstance(val_false, Array) else val_false
+        numpy = bool_ind.np.where(bool_ind.numpy, val_true, val_false)
+        return bool_ind(numpy)
+
+    def apply(self, func: Callable, *args, **kwargs) -> 'Array':
+        numpy = func(self.numpy, *args, **kwargs)
+        return self(numpy)
 
     @property
     def shape(self) -> Tuple[int, ...]:
