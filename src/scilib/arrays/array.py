@@ -680,6 +680,24 @@ class Array(metaclass=ArrayMeta):
         return bool_ind(numpy)
 
     def apply(self, func: Callable, *args, **kwargs) -> 'Array':
+        if 'axis' in kwargs:
+            axis_kw = 'axis'
+        elif 'axes' in kwargs:
+            axis_kw = 'axes'
+        else:
+            axis_kw = None
+        if axis_kw is not None:
+            views = kwargs.pop(axis_kw)
+            if isinstance(views, tuple):
+                single = False
+            else:
+                single = True
+                views = tuple(views)
+            axes = []
+            for view_name in views:
+                axes += self.views[view_name].axes
+            axes = tuple(axes)
+            kwargs[axis_kw] = axes[0] if single else axes
         numpy = func(self.numpy, *args, **kwargs)
         return self(numpy)
 

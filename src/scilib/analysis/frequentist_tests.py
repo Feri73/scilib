@@ -5,7 +5,7 @@ import numpy as numpy_lib
 import numpy.typing as npt
 from typing_extensions import Literal
 
-from ..arrays.utils import combine_axes, non_nan_count
+from ..arrays.utils import combine_axes, non_nan_count, uncombine_axes
 
 try:
     import scipy.stats as scipy_stats_lib
@@ -126,3 +126,58 @@ def nan_welch_test(a: NPValue, b: NPValue, axis: NPAxis,
     if keepdims:
         p_value = np.expand_dims(p_value, axis)
     return p_value
+
+
+def _benjamini_hochberg(p: NPValue, axis=0, *, np=numpy_lib) -> NPValue:
+    p = np.swapaxes(p, axis, -1)
+    shape = p.shape
+    q = np.empty_like(p)
+    for idx in numpy_lib.ndindex(shape[:-1]):
+        q[idx] = _bh_1d(p[idx], np=np)
+    q = np.swapaxes(q, -1, axis)
+    return q
+
+
+def _bh_1d(p_1d: NPValue, *, np=numpy_lib) -> NPValue:
+    q = np.full_like(p_1d, numpy_lib.nan, dtype=np.float64)
+
+    valid = ~np.isnan(p_1d)
+    m = int(valid.sum())
+    if m == 0:
+        return q
+
+    order = np.argsort(p_1d[valid])
+    p_sorted = p_1d[valid][order]
+
+    ranks = np.arange(1, m + 1, dtype=np.float64)
+    q_raw = (m / ranks) * p_sorted
+
+    q_monotone = _cummin_from_right(q_raw, axis=0, np=np)
+    q_monotone = np.clip(q_monotone, 0.0, 1.0)
+
+    q_vals = np.empty(m, dtype=np.float64)
+    q_vals[order] = q_monotone
+    q[valid] = q_vals
+
+    return q
+
+
+def _cummin_from_right(a, axis, *, np=numpy_lib):
+    if hasattr(np.minimum, 'accumulate'):
+        try:
+            a_flip = np.flip(a, axis=axis)
+            cm_flip = np.minimum.accumulate(a_flip, axis=axis)
+            return np.flip(cm_flip, axis=axis)
+        except NotImplementedError:
+            pass
+
+    a_move = np.moveaxis(a, axis, -1)
+    out = a_move.copy()
+
+    for i in range(a_move.shape[-1] - 2, -1, -1):
+        out[..., i] = np.minimum(out[..., i], out[..., i + 1])
+    return np.moveaxis(out, -1, axis)
+
+
+def nan_bh_correction(p: NPValue, axis: NPAxis, *, np=numpy_lib) -> npt.NDArray:
+    return uncombine_axes(_benjamini_hochberg(combine_axes(p, axis, np=np), np=np), axis, np.asarray(p).shape, np=np)

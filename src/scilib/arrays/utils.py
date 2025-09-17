@@ -24,6 +24,19 @@ def combine_axes(data: NPValue, axis: NPAxis, *, np=numpy_lib) -> npt.NDArray:
     a = np.reshape(a, (numpy_lib.prod(a.shape[:len(axis)]), *a.shape[len(axis):]))
     return a
 
+def uncombine_axes(data: npt.NDArray, axis: NPAxis, original_shape: Tuple[int, ...], *, np=numpy_lib) -> npt.NDArray:
+    if isinstance(axis, int):
+        axis = (axis,)
+    axis = tuple(axis)
+    data = np.asarray(data)
+    axis_shape = tuple(original_shape[a] for a in axis)
+    sh = tuple(original_shape[a] for a in range(len(original_shape)) if a not in axis)
+    a = np.reshape(data, axis_shape + sh)
+    inv_perm = tuple(np.argsort(np.array(axis + tuple(i for i in range(len(original_shape)) if i not in axis))
+                                ).tolist())
+    a = np.transpose(a, inv_perm)
+    return a
+
 
 def ci(data: NPValue, axis: NPAxis, confidence: float = 0.95, keepdims: bool = False, *,
        np=numpy_lib, scipy_stats=scipy_stats_lib) -> npt.NDArray:
