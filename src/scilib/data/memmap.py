@@ -1,10 +1,12 @@
 import os
+import threading
 from pathlib import Path
 from typing import Tuple, Union
 
 import numpy as np
 import numpy.typing as npt
 
+from ..path.path import UniversalPath
 from ..utils import Config as C, load_pickle, dump_pickle
 
 Index = Union[int, Tuple[int, ...]]
@@ -170,3 +172,23 @@ class SerializableMemmap(np.memmap):
     def __reduce__(self):
         self.flush()
         return self.__class__, (self._sp_filename, self.dtype, self._sp_mode, int(self._sp_offset), self.shape)
+
+
+class AutoFlushMemmap(SerializableMemmap):
+    def __new__(cls, filename, *args, flush_every: int = -1, **kwargs):
+        if not isinstance(filename, UniversalPath):
+            filename = UniversalPath(filename)
+        obj = super().__new__(cls, filename, *args, **kwargs)
+        obj._flush_every = flush_every
+        obj._unflushed_counter = 0
+        obj._lock = threading.Lock()
+        return obj
+
+    def __setitem__(self, key, value):
+        super().__setitem__(key, value)
+        if self._flush_every > 0:
+            with self._lock:
+                self._unflushed_counter += 1
+                if self._unflushed_counter > self._flush_every:
+                    self.flush()
+                    self._unflushed_counter = 0
