@@ -655,10 +655,11 @@ class Array(metaclass=ArrayMeta):
         for view_name, view in views.items():
             new_axes += view.axes
         numpy = self.np.expand_dims(self.numpy, tuple(new_axes))
+        remaining = tuple(i for i in range(numpy.ndim) if i not in new_axes)
         for view_name, view in views.items():
             views[view_name] = view(numpy)
         for view_name, view in self.views.items():
-            views[view_name] = view(numpy, [a + len([aa for aa in new_axes if aa <= a]) for a in view.axes])
+            views[view_name] = view(numpy, [remaining[a] for a in view.axes])
         return Array(**views)
 
     def transpose(self, *views_name: str) -> 'Array':

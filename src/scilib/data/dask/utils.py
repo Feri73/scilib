@@ -1,5 +1,6 @@
 import hashlib
 import os
+import warnings
 from pathlib import Path
 from typing import Union, Dict, Callable, Tuple
 
@@ -106,15 +107,30 @@ def as_da(a: da.Array) -> da.Array:
         return a(as_da(a.numpy))
 
 
-def get_chunks(a: arr.Array, chunks: dict[str, int]) -> tuple[int, ...]:
-    res = [-1 for i in range(a.ndim)]
+def get_chunks(a: arr.Array, chunks: Dict[str, Union[int, Tuple[int, ...]]], unspecified_policy: str = '-1') \
+        -> Tuple[Union[int, Tuple[int, ...]], ...]:
+    unspecified_policy == -1 or unspecified_policy == 'keep'
+    res = [-1 if unspecified_policy == '-1' else a.numpy.chunks[i] for i in range(a.ndim)]
     for view_name in chunks:
         res[getattr(a, view_name).view.axis] = chunks[view_name]
     return tuple(res)
 
 
+def rechunk(a: arr.Array, chunks: Dict[str, Union[int, Tuple[int, ...]]], unspecified_policy: str = '-1') -> arr.Array:
+    new_chunks = get_chunks(a, chunks, unspecified_policy)
+    if all([new == -1 and len(old) == 1 or old == new for old, new in zip(a.numpy.chunks, new_chunks)]):
+        return a
+    return a(a.numpy.rechunk(new_chunks))
+
+
+def chunks_as_dict(a: arr.Array) -> Dict[str, Union[int, Tuple[int, ...]]]:
+    return {view_name: a.numpy.chunks[getattr(a, view_name).view.axis] for view_name in a.views}
+
+
 def get_dask_func(func: Callable, **dask_kwargs) -> Callable:
     def f(a, **kwargs):
+        if 'axis' in kwargs and len(a.chunks[kwargs['axis']]) != 1:
+            warnings.warn(f'Axis {kwargs["axis"]} is not chunked!', RuntimeWarning)
         return da.map_blocks(func, a,
                              dtype=a.dtype,
                              meta=xp.array((), dtype=a.dtype),
@@ -137,7 +153,23 @@ def get_dask_reduce_func(func: Callable, *, pos_kws: tuple[str, ...] = None, n_o
         else:
             _func = lambda *a, **kwa: _np.stack(func(*a, **kwa), axis=0)
         axes = axis if isinstance(axis, tuple) else [axis]
-        res = da.map_blocks(_func, a, *[kwargs.pop(kw) for kw in pos_kws],
+
+        all_dask_inps = [a] + [kwargs.pop(kw) for kw in pos_kws]
+        for d in all_dask_inps[1:]:
+            assert a.ndim == d.ndim
+        chunks = []
+        for i in range(a.ndim):
+            for d in all_dask_inps:
+                if d.shape[i] != 1:
+                    chunks.append(d.chunks[i])
+                    break
+            else:
+                chunks.append((1,))
+        for i in range(a.ndim):
+            assert all(len(d.chunks[i]) == 1 for d in all_dask_inps) or \
+                   all(d.shape[i] == 1 or d.chunks[i] == chunks[i] for d in all_dask_inps)
+
+        res = da.map_blocks(_func, *all_dask_inps,
                             drop_axis=axis,
                             dtype=a.dtype,
                             meta=_np.array((), dtype=a.dtype),
