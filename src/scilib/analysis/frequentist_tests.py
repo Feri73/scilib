@@ -1,9 +1,8 @@
 from types import ModuleType
-from typing import Union, Tuple
+from typing import Union, Tuple, Literal
 
 import numpy as numpy_lib
 import numpy.typing as npt
-from typing_extensions import Literal
 
 from ..arrays.utils import combine_axes, non_nan_count, uncombine_axes
 
