@@ -34,6 +34,22 @@ class t:
         args = map(cp.asnumpy, args)
         return cp.asarray(scipy.stats.t.cdf(x, *args, **kwargs))
 
+    @staticmethod
+    def sf(x, *args, **kwargs):
+        x = cp.asnumpy(x)
+        args = map(cp.asnumpy, args)
+        kwargs = {k: cp.asnumpy(v) if isinstance(v, cp.ndarray) else v for k, v in kwargs.items()}
+        return cp.asarray(scipy.stats.t.sf(x, *args, **kwargs))
+
+
+class f:
+    @staticmethod
+    def sf(x, *args, **kwargs):
+        x = cp.asnumpy(x)
+        args = map(cp.asnumpy, args)
+        kwargs = {k: cp.asnumpy(v) if isinstance(v, cp.ndarray) else v for k, v in kwargs.items()}
+        return cp.asarray(scipy.stats.f.sf(x, *args, **kwargs))
+
 
 class chi2:
     @staticmethod
@@ -56,6 +72,7 @@ class binom:
 
 
 cstats.t = t
+cstats.f = f
 cstats.chi2 = chi2
 cstats.binom = binom
 

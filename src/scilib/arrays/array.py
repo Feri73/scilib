@@ -61,6 +61,8 @@ class ArrayView(metaclass=ArrayViewMeta):
 
     @property
     def np(self) -> ModuleType:
+        if not hasattr(self, f'_{self.__class__.__name__}__np'):
+            self.__np = numpy_lib
         return self.__np
 
     @property
