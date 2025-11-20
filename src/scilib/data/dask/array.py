@@ -99,6 +99,8 @@ da.from_delayed_array = from_delayed_array
 
 def from_any_array(array: np.ndarray, chunks: tuple[int, ...]) -> da.Array:
     if isinstance(array, np.memmap):
+        if isinstance(array.base, np.memmap):
+            raise ValueError('memmap should not be a view')
         return da.from_memmap(filename=array.filename,
                               shape=array.shape,
                               dtype=array.dtype,
