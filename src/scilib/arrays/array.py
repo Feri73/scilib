@@ -290,7 +290,8 @@ class SampledTimeView(ArrayView1D):
     def take(self, start_time: float = None, duration: float = None, freq: float = None,
              set_start_time: bool = False) -> 'SampledTimeView':
         start_time = self.start_time if start_time is None else start_time
-        duration = self.times[-1] - self.times[0] if duration is None else duration
+        times = _compute(self.times, np=self.np)
+        duration = float(times[-1] - times[0]) if duration is None else duration
         freq = self.freq if freq is None else freq
         res = self[start_time:start_time + duration:1. / freq]
         return self._new(self.axis, freq, start_time, set_start_time)(res)
