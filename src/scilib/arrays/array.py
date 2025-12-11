@@ -102,9 +102,8 @@ class ArrayView(metaclass=ArrayViewMeta):
                 slcs[axis] = indices
         self.numpy[tuple(slcs)] = value
 
-    @accessor
-    def reduce(self, func: Callable, **kwargs):
-        return self(func(self.numpy, axis=tuple(self.axes), keepdims=True, **kwargs))
+    def reduce(self, func: Callable, **kwargs) -> NPValue:
+        return func(self.numpy, axis=tuple(self.axes), keepdims=True, **kwargs)
 
     @accessor
     def apply(self, func: Callable, **kwargs):
@@ -134,9 +133,8 @@ class ArrayView1D(ArrayView):
     def __len__(self):
         return self.numpy.shape[self.axis]
 
-    @accessor
     def reduce(self, func: Callable, **kwargs):
-        return self(func(self.numpy, axis=self.axis, keepdims=True, **kwargs))
+        return func(self.numpy, axis=self.axis, keepdims=True, **kwargs)
 
     @accessor
     def appended(self, value: NPValue) -> 'ArrayView1D':
@@ -147,6 +145,13 @@ class ArrayView1D(ArrayView):
             assert self.numpy.shape[:self.axis] == value.shape[:self.axis]
             assert self.numpy.shape[self.axis + 1:] == value.shape[self.axis + 1:]
         return self(self.np.append(self.numpy, value, axis=self.axis))
+
+    @staticmethod
+    def concatenate(*views: 'ArrayView1D') -> 'ArrayView1D':
+        assert all(x.axis == views[0].axis for x in views)
+        assert all(x.np is views[0].np for x in views)
+        return ArrayView1D(views[0].axis, np=views[0].np)(
+            views[0].np.concatenate(tuple(x.numpy for x in views), axis=views[0].axis))
 
     @accessor
     def apply(self, func: Callable, **kwargs):
@@ -277,7 +282,8 @@ class SampledTimeView(ArrayView1D):
                 times = slice(times.start if times.start is None else int((times.start - self.start_time) * self.freq),
                               times.stop if times.stop is None else int((times.stop - self.start_time) * self.freq),
                               step if step is None else int(step))
-                if times.start is not None and times.start < 0 or times.stop < 0:
+                if ((times.start is not None and times.start < 0) or
+                        (times.stop is not None and times.stop < 0)):
                     raise ValueError()
         else:
             times = [int((t - self.start_time) * self.freq) for t in times]
@@ -340,6 +346,7 @@ class EventTimeView(ArrayView1D):
                 'sum': get sum
         """
         assert multi_events in ('raise', 'mean', 'sum')
+        assert start_time <= self.times[0]
 
         if multi_events != 'sum' or default_value != 0.:
             raise NotImplementedError()
@@ -447,7 +454,7 @@ class KeyView(ArrayView1D):
         has_include_pattern = False
         final_keys = []
         for pattern in keys:
-            if pattern.startswith('!') or pattern.endswith('!'):
+            if pattern.startswith('!'):
                 exclude_patterns.append(pattern)
             else:
                 has_include_pattern = True
@@ -485,11 +492,21 @@ class KeyView(ArrayView1D):
         new_view.__keys = [*self.__keys, *keys]
         return super(KeyView, new_view).appended(value)
 
+    @staticmethod
+    def concatenate(*views: 'ArrayView1D') -> 'ArrayView1D':
+        if not all(isinstance(x, KeyView) for x in views):
+            return ArrayView1D.concatenate(*views)
+        assert all(x.axis == views[0].axis for x in views)
+        assert all(x.np is views[0].np for x in views)
+        assert all([all(key not in views[0].keys for key in x.keys) for x in views[1:]])
+        return KeyView(views[0].axis, *sum([x.keys for x in views], ()), np=views[0].np)(
+            views[0].np.concatenate(tuple(x.numpy for x in tuple(views)), axis=views[0].axis))
+
     def __setitem__(self, keys: Union[str, List[str]], value: NPValue) -> None:
         """
         needs to return elements in the order keys are given
         """
-        keys = self.__infer_keys(keys)
+        keys = self.infer_keys(keys)
         super(KeyView, self).__setitem__([self.__reverse_keys[key] for key in keys], value)
 
 
@@ -641,7 +658,7 @@ class Array(metaclass=ArrayMeta):
 
         if all_ones:
             views = [view_name for view_name, view in self.views.items()
-                     if numpy_lib.array(self.views[view_name].shape) == 1]
+                     if numpy_lib.all(numpy_lib.array(self.views[view_name].shape) == 1)]
 
         axes = []
         for view_name in views:
@@ -696,7 +713,7 @@ class Array(metaclass=ArrayMeta):
                 single = False
             else:
                 single = True
-                views = tuple(views)
+                views = tuple([views])
             axes = []
             for view_name in views:
                 axes += self.views[view_name].axes
@@ -719,9 +736,6 @@ class Array(metaclass=ArrayMeta):
         if view_name in self.views:
             if len(views) != 0:
                 raise ValueError()
-            view = self.views[view_name]
-            if not isinstance(view, ArrayView1D):
-                raise TypeError()
         else:
             if len(views) == 0 and view_name is None:
                 view = ArrayView1D(self.ndim, np=self.np)
@@ -729,6 +743,7 @@ class Array(metaclass=ArrayMeta):
             elif len(views) == 0 and view_name is not None:
                 view = ArrayView1D(self.ndim, np=self.np)
             else:
+                assert len(views) == 1
                 view_name, view = list(views.items())[0]
             arrays = tuple(array.expand(**{view_name: ArrayView1D(view.axis, np=self.np)}) for array in arrays)
             if view_name == '__tmp__':
@@ -737,4 +752,13 @@ class Array(metaclass=ArrayMeta):
             self = arrays[0]
             self.__views[view_name] = view
 
-        return self(self.np.concatenate(tuple(x.numpy for x in arrays), axis=view.axis))
+            return self(self.np.concatenate(tuple(x.numpy for x in arrays), axis=view.axis))
+
+        concatenated_view = self.views[view_name].concatenate(*[getattr(a, view_name).view for a in arrays])
+        res = self.copy(**{view_name: concatenated_view})(concatenated_view.numpy)
+        if view_name == '__tmp__':
+            del res.__views[view_name]
+            if hasattr(res, view_name):
+                delattr(res, view_name)
+
+        return res
