@@ -361,7 +361,7 @@ class EventTimeView(ArrayView1D):
         bin_idx = self.np.searchsorted(sample_times, times, side='left')
         flat_data = self.np.reshape(data, (-1, data.shape[-1]))
         out = self.np.stack([self.np.bincount(bin_idx, flat_data[i], minlength=n_steps).astype(self.numpy.dtype)
-                             for i in range(len(flat_data))])
+                             for i in range(len(flat_data))])[..., :n_steps]
         out = self.np.reshape(out, (*data.shape[:-1], n_steps))
         out = self.np.moveaxis(out, -1, self.axis)
 
