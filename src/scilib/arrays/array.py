@@ -133,6 +133,13 @@ class ArrayView1D(ArrayView):
     def __len__(self):
         return self.numpy.shape[self.axis]
 
+    def squeeze(self):
+        assert len(self) == 1
+        res = self.numpy
+        slcs = [slice(None)] * len(self.numpy.shape)
+        slcs[self.axis] = 0
+        return res[tuple(slcs)]
+
     def reduce(self, func: Callable, **kwargs):
         return func(self.numpy, axis=self.axis, keepdims=True, **kwargs)
 
